@@ -574,28 +574,46 @@ class TestBirthdayReminderLogic(unittest.TestCase):
         )
 
     def test_birthday_reminder_flags_reset_mechanism(self):
-        """Test that we need a mechanism to reset reminder flags yearly"""
-        # This test demonstrates the current problem and will fail until we fix it
+        """Test that reset_birthday_reminder_flags() clears flags for distant birthdays"""
         today = datetime.now()
 
-        # Register a birthday from last year
-        test_birthday = datetime(1990, today.month, today.day)
+        # Register a birthday 30 days from now (>10 days away)
+        future_date = today + timedelta(days=30)
+        test_birthday = datetime(1990, future_date.month, future_date.day)
         db.register_birthday(self.test_chat_id, "Test Person", test_birthday, True)
 
-        # Mark all reminders as sent (simulating what happened last year)
+        # Mark all reminders as sent (simulating past cycle)
         birthday_id = 1
         for days in [0, 1, 3, 7]:
             db.mark_birthday_reminder_sent(birthday_id, days)
 
-        # Now check if we can get upcoming birthdays for this year
-        upcoming = db.get_upcoming_birthdays(0)
+        # Verify flags are set
+        conn = sqlite3.connect(db.DB_FILE)
+        cursor = conn.cursor()
+        cursor.execute(
+            "SELECT was_reminded_0_days_ago, was_reminded_1_days_ago, "
+            "was_reminded_3_days_ago, was_reminded_7_days_ago FROM birthdays WHERE id = 1"
+        )
+        flags_before = cursor.fetchone()
+        conn.close()
+        self.assertTrue(all(flags_before), "All flags should be TRUE before reset")
 
-        # This should NOT be empty - we should get reminders again this year
-        # But currently it WILL be empty due to the bug
-        self.assertEqual(
-            len(upcoming),
-            0,
-            "This test shows the BUG - reminder flags are never reset, so no reminders are sent in subsequent years",
+        # Run the reset mechanism — birthday is >10 days away, flags should clear
+        db.reset_birthday_reminder_flags()
+
+        # Verify flags are now cleared
+        conn = sqlite3.connect(db.DB_FILE)
+        cursor = conn.cursor()
+        cursor.execute(
+            "SELECT was_reminded_0_days_ago, was_reminded_1_days_ago, "
+            "was_reminded_3_days_ago, was_reminded_7_days_ago FROM birthdays WHERE id = 1"
+        )
+        flags_after = cursor.fetchone()
+        conn.close()
+        self.assertFalse(
+            any(flags_after),
+            "After reset_birthday_reminder_flags(), all flags should be cleared "
+            "for birthdays >10 days away, making them eligible for reminders again",
         )
 
     def test_get_upcoming_birthdays_respects_reminder_flags(self):
@@ -1271,6 +1289,251 @@ class TestFindMostPopularDate(unittest.TestCase):
         self.assertIsNotNone(min_val)
         self.assertIsNotNone(max_val)
         self.assertIsNotNone(median)
+
+
+class TestYearBoundaryReset(unittest.TestCase):
+    """Test that reminder flag reset works correctly around the Dec/Jan year boundary."""
+
+    def setUp(self):
+        self.original_db_file = db.DB_FILE
+        db.DB_FILE = "test_year_boundary.db"
+        db.init_db()
+        self.test_chat_id = 123456789
+
+    def tearDown(self):
+        if os.path.exists(db.DB_FILE):
+            os.remove(db.DB_FILE)
+        db.DB_FILE = self.original_db_file
+
+    def test_reset_does_not_clear_nearby_birthday(self):
+        """Birthdays within 10 days should NOT have flags reset."""
+        today = datetime.now()
+        # Birthday 5 days from now
+        nearby_date = today + timedelta(days=5)
+        test_birthday = datetime(1990, nearby_date.month, nearby_date.day)
+        db.register_birthday(self.test_chat_id, "Nearby Person", test_birthday, True)
+
+        db.mark_birthday_reminder_sent(1, 7)
+
+        db.reset_birthday_reminder_flags()
+
+        # Flag should still be set (not reset) because birthday is close
+        conn = sqlite3.connect(db.DB_FILE)
+        cursor = conn.cursor()
+        cursor.execute("SELECT was_reminded_7_days_ago FROM birthdays WHERE id = 1")
+        result = cursor.fetchone()
+        conn.close()
+
+        self.assertTrue(result[0], "Flags should NOT be reset for birthdays within 10 days")
+
+    def test_reset_clears_distant_birthday(self):
+        """Birthdays more than 10 days away should have flags reset."""
+        today = datetime.now()
+        # Birthday 60 days from now
+        distant_date = today + timedelta(days=60)
+        test_birthday = datetime(1990, distant_date.month, distant_date.day)
+        db.register_birthday(self.test_chat_id, "Distant Person", test_birthday, True)
+
+        for days in [0, 1, 3, 7]:
+            db.mark_birthday_reminder_sent(1, days)
+
+        db.reset_birthday_reminder_flags()
+
+        conn = sqlite3.connect(db.DB_FILE)
+        cursor = conn.cursor()
+        cursor.execute(
+            "SELECT was_reminded_0_days_ago, was_reminded_1_days_ago, "
+            "was_reminded_3_days_ago, was_reminded_7_days_ago FROM birthdays WHERE id = 1"
+        )
+        result = cursor.fetchone()
+        conn.close()
+
+        self.assertFalse(result[0], "0-day flag should be reset for distant birthday")
+        self.assertFalse(result[1], "1-day flag should be reset for distant birthday")
+        self.assertFalse(result[2], "3-day flag should be reset for distant birthday")
+        self.assertFalse(result[3], "7-day flag should be reset for distant birthday")
+
+    def test_reset_handles_year_boundary_jan_birthday_from_dec(self):
+        """A Jan birthday should NOT be reset when we're in late December (it's close)."""
+        today = datetime.now()
+
+        # Create a birthday on Jan 3 and set flags
+        test_birthday = datetime(1990, 1, 3)
+        db.register_birthday(self.test_chat_id, "Jan Person", test_birthday, True)
+        db.mark_birthday_reminder_sent(1, 0)
+
+        db.reset_birthday_reminder_flags()
+
+        conn = sqlite3.connect(db.DB_FILE)
+        cursor = conn.cursor()
+        cursor.execute("SELECT was_reminded_0_days_ago FROM birthdays WHERE id = 1")
+        result = cursor.fetchone()
+        conn.close()
+
+        # If today is late December (within 10 days of Jan 3), flags should NOT be reset
+        # If today is far from Jan 3 (e.g., April), flags SHOULD be reset
+        jan3_this_year = datetime(today.year, 1, 3)
+        jan3_next_year = datetime(today.year + 1, 1, 3)
+        days_to_jan3 = min(
+            abs((jan3_this_year - today).days),
+            abs((jan3_next_year - today).days),
+        )
+
+        if days_to_jan3 <= 10:
+            self.assertTrue(result[0], "Jan 3 birthday close to today should keep flags")
+        else:
+            self.assertFalse(result[0], "Jan 3 birthday far from today should have flags reset")
+
+    def test_reset_at_exact_boundary_10_days(self):
+        """Birthday exactly 11 days away should be reset; 10 days should not."""
+        today = datetime.now()
+
+        # Birthday 11 days away — should be reset
+        date_11 = today + timedelta(days=11)
+        bd_11 = datetime(1990, date_11.month, date_11.day)
+        db.register_birthday(self.test_chat_id, "Person 11", bd_11, True)
+        db.mark_birthday_reminder_sent(1, 0)
+
+        # Birthday 9 days away — should NOT be reset
+        date_9 = today + timedelta(days=9)
+        bd_9 = datetime(1990, date_9.month, date_9.day)
+        db.register_birthday(self.test_chat_id, "Person 9", bd_9, True)
+        db.mark_birthday_reminder_sent(2, 0)
+
+        db.reset_birthday_reminder_flags()
+
+        conn = sqlite3.connect(db.DB_FILE)
+        cursor = conn.cursor()
+
+        cursor.execute("SELECT was_reminded_0_days_ago FROM birthdays WHERE id = 1")
+        result_11 = cursor.fetchone()
+
+        cursor.execute("SELECT was_reminded_0_days_ago FROM birthdays WHERE id = 2")
+        result_9 = cursor.fetchone()
+
+        conn.close()
+
+        self.assertFalse(result_11[0], "Birthday 11 days away should have flags reset")
+        self.assertTrue(result_9[0], "Birthday 9 days away should keep flags")
+
+
+class TestLogException(unittest.TestCase):
+    """Test that log_exception logs without re-raising."""
+
+    def test_log_exception_does_not_reraise(self):
+        """log_exception should log the error but not re-raise the exception."""
+        test_exc = ValueError("test error")
+
+        # This should NOT raise — if it does, the test fails
+        utils.log_exception(test_exc)
+
+    def test_log_exception_logs_message(self):
+        """log_exception should actually log the exception."""
+        test_exc = RuntimeError("specific test error")
+
+        with self.assertLogs(level="ERROR") as cm:
+            utils.log_exception(test_exc)
+
+        self.assertTrue(
+            any("specific test error" in msg for msg in cm.output),
+            "log_exception should log the error message",
+        )
+
+
+class TestGetActiveBackupPingsDue(unittest.TestCase):
+    """Test the new get_active_backup_pings_due() function."""
+
+    def setUp(self):
+        self.original_db_file = db.DB_FILE
+        db.DB_FILE = "test_backup_due.db"
+        db.init_db()
+        self.test_chat_id = 123456789
+
+    def tearDown(self):
+        if os.path.exists(db.DB_FILE):
+            os.remove(db.DB_FILE)
+        db.DB_FILE = self.original_db_file
+
+    def test_returns_due_pings(self):
+        """Should return pings where enough time has elapsed."""
+        # Register with 1-minute interval
+        db.register_backup_ping(self.test_chat_id, 1)
+
+        # Manually set last_updated_timestamp to 2 minutes ago
+        conn = sqlite3.connect(db.DB_FILE)
+        cursor = conn.cursor()
+        cursor.execute(
+            """
+            UPDATE backup_ping_settings
+            SET last_updated_timestamp = datetime('now', '-2 minutes')
+            WHERE chat_id = ?
+            """,
+            (self.test_chat_id,),
+        )
+        conn.commit()
+        conn.close()
+
+        due = db.get_active_backup_pings_due()
+        self.assertEqual(len(due), 1)
+        self.assertEqual(due[0][0], self.test_chat_id)
+
+    def test_excludes_not_yet_due(self):
+        """Should not return pings where interval hasn't elapsed."""
+        # Register with 60-minute interval (just registered, so timestamp is now)
+        db.register_backup_ping(self.test_chat_id, 60)
+
+        due = db.get_active_backup_pings_due()
+        self.assertEqual(len(due), 0)
+
+    def test_excludes_inactive(self):
+        """Should not return inactive pings even if time elapsed."""
+        db.register_backup_ping(self.test_chat_id, 1)
+        db.unregister_backup_ping(self.test_chat_id)
+
+        # Set timestamp to long ago
+        conn = sqlite3.connect(db.DB_FILE)
+        cursor = conn.cursor()
+        cursor.execute(
+            """
+            UPDATE backup_ping_settings
+            SET last_updated_timestamp = datetime('now', '-1 day')
+            WHERE chat_id = ?
+            """,
+            (self.test_chat_id,),
+        )
+        conn.commit()
+        conn.close()
+
+        due = db.get_active_backup_pings_due()
+        self.assertEqual(len(due), 0)
+
+
+class TestSafeReplaceYear(unittest.TestCase):
+    """Test _safe_replace_year for Feb 29 edge cases."""
+
+    def test_normal_date(self):
+        """Normal dates should just replace the year."""
+        date = datetime(2020, 6, 15)
+        result = db._safe_replace_year(date, 2025)
+        self.assertEqual(result, datetime(2025, 6, 15))
+
+    def test_feb_29_to_leap_year(self):
+        """Feb 29 to another leap year should work normally."""
+        date = datetime(2020, 2, 29)
+        result = db._safe_replace_year(date, 2024)
+        self.assertEqual(result, datetime(2024, 2, 29))
+
+    def test_feb_29_to_non_leap_year(self):
+        """Feb 29 to non-leap year should fallback to Feb 28."""
+        date = datetime(2020, 2, 29)
+        result = db._safe_replace_year(date, 2025)
+        self.assertEqual(result, datetime(2025, 2, 28))
+
+    def test_feb_28_to_non_leap_year(self):
+        """Feb 28 should always work regardless of leap year."""
+        date = datetime(2020, 2, 28)
+        result = db._safe_replace_year(date, 2025)
+        self.assertEqual(result, datetime(2025, 2, 28))
 
 
 if __name__ == "__main__":
