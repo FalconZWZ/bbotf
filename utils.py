@@ -228,6 +228,19 @@ def is_daytime():
     return now.hour >= 7 and now.hour <= 20
 
 
+def is_in_notification_window(
+    current_hour: int, notification_hour: int, window: int = 8
+) -> bool:
+    """Check if current_hour (UTC) falls within [notification_hour, notification_hour + window).
+
+    Handles midnight wrapping: e.g., notification_hour=21, window=8 covers 21-22-23-0-1-2-3-4.
+    """
+    for offset in range(window):
+        if current_hour == (notification_hour + offset) % 24:
+            return True
+    return False
+
+
 def cleanup_old_logs(log_dir=".", max_days=30):
     now = datetime.now()
     for filename in os.listdir(log_dir):

@@ -40,6 +40,10 @@
       "en": "💝 Support Author",
       "ru": "💝 Поддержать автора"
     },
+    "settings": {
+      "en": "⚙️ Settings",
+      "ru": "⚙️ Настройки"
+    },
     "lang_english": {
       "en": "🇬🇧 English",
       "ru": "🇬🇧 English"
@@ -85,6 +89,10 @@
     "support": {
       "en": "Support the author's work with Telegram Stars.",
       "ru": "Поддержать работу автора через Telegram Stars."
+    },
+    "settings": {
+      "en": "Configure bot settings.",
+      "ru": "Настроить параметры бота."
     }
   },
   "messages": {
@@ -339,6 +347,26 @@
     "stars_amount_1000": {
       "en": "⭐️ 1000 Stars",
       "ru": "⭐️ 1000 звёзд"
+    },
+    "settings_title": {
+      "en": "⚙️ *Settings*\n\nConfigure your preferences:",
+      "ru": "⚙️ *Настройки*\n\nНастройте ваши предпочтения:"
+    },
+    "settings_notif_time": {
+      "en": "🔔 Notification Time: {hour}:00 UTC",
+      "ru": "🔔 Время уведомлений: {hour}:00 UTC"
+    },
+    "settings_notif_time_title": {
+      "en": "🔔 *Notification Time*\n\nSelect when you'd like to receive birthday reminders (UTC+0).\nReminders will be sent within 8 hours of your chosen time.\n\n_Example: 07:00 UTC = 10:00 Moscow_",
+      "ru": "🔔 *Время уведомлений*\n\nВыберите, когда вы хотите получать напоминания (UTC+0).\nНапоминания будут отправлены в течение 8 часов после выбранного времени.\n\n_Пример: 07:00 UTC = 10:00 Москва_"
+    },
+    "settings_notif_time_set": {
+      "en": "Notification time set to {hour}:00 UTC",
+      "ru": "Время уведомлений: {hour}:00 UTC"
+    },
+    "settings_back": {
+      "en": "← Back",
+      "ru": "← Назад"
     }
   },
   "month_names": {
