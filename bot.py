@@ -4,7 +4,7 @@ import os
 import threading
 import time
 from collections import defaultdict
-from datetime import datetime
+from datetime import datetime, timezone
 
 import telebot
 from dotenv import load_dotenv
@@ -74,6 +74,7 @@ class TCommand(enum.Enum):
     Share = "share"
     Language = "language"
     Support = "support"
+    Settings = "settings"
 
 
 # Command mappings for text commands
@@ -102,7 +103,7 @@ def get_button_to_command_mapping(chat_id: int) -> dict:
         i18n.get_button_text("delete_birthday", chat_id): TCommand.DeleteBirthday,
         i18n.get_button_text("share", chat_id): TCommand.Share,
         i18n.get_button_text("stats", chat_id): TCommand.Stats,
-        i18n.get_button_text("language", chat_id): TCommand.Language,
+        i18n.get_button_text("settings", chat_id): TCommand.Settings,
         i18n.get_button_text("support", chat_id): TCommand.Support,
     }
 
@@ -133,6 +134,9 @@ def get_command_descriptions(chat_id: int) -> dict:
         ),
         i18n.get_button_text("stats", chat_id): i18n.get_button_description(
             "stats", chat_id
+        ),
+        i18n.get_button_text("settings", chat_id): i18n.get_button_description(
+            "settings", chat_id
         ),
         i18n.get_button_text("support", chat_id): i18n.get_button_description(
             "support", chat_id
@@ -190,7 +194,7 @@ def get_reply_markup(message) -> InlineKeyboardMarkup | None:
             i18n.get_button_text("stats", chat_id), callback_data="stats"
         ),
         InlineKeyboardButton(
-            i18n.get_button_text("language", chat_id), callback_data="language"
+            i18n.get_button_text("settings", chat_id), callback_data="settings"
         ),
         InlineKeyboardButton(
             i18n.get_button_text("support", chat_id), callback_data="support"
@@ -207,6 +211,57 @@ def get_language_keyboard() -> InlineKeyboardMarkup:
     markup.row(
         InlineKeyboardButton("🇬🇧 English", callback_data="lang_en"),
         InlineKeyboardButton("🇷🇺 Русский", callback_data="lang_ru"),
+    )
+    return markup
+
+
+def get_settings_keyboard(chat_id: int) -> InlineKeyboardMarkup:
+    """Create settings menu keyboard"""
+    markup = InlineKeyboardMarkup()
+    notification_hour = db.get_notification_hour(chat_id)
+    markup.row(
+        InlineKeyboardButton(
+            i18n.get_message(
+                "settings_notif_time", chat_id, hour=f"{notification_hour:02d}"
+            ),
+            callback_data="settings_notif_time",
+        )
+    )
+    markup.row(
+        InlineKeyboardButton(
+            i18n.get_button_text("language", chat_id),
+            callback_data="settings_language",
+        )
+    )
+    markup.row(
+        InlineKeyboardButton(
+            i18n.get_message("settings_back", chat_id),
+            callback_data="settings_back",
+        )
+    )
+    return markup
+
+
+def get_notification_time_keyboard(chat_id: int) -> InlineKeyboardMarkup:
+    """Create notification time picker keyboard (all 24 UTC hours)"""
+    markup = InlineKeyboardMarkup()
+    current_hour = db.get_notification_hour(chat_id)
+
+    buttons = []
+    for hour in range(24):
+        label = f"{'✅ ' if hour == current_hour else ''}{hour:02d}:00"
+        buttons.append(
+            InlineKeyboardButton(label, callback_data=f"settings_hour_{hour}")
+        )
+
+    for i in range(0, len(buttons), 4):
+        markup.row(*buttons[i : i + 4])
+
+    markup.row(
+        InlineKeyboardButton(
+            i18n.get_message("settings_back", chat_id),
+            callback_data="settings_back_main",
+        )
     )
     return markup
 
@@ -317,12 +372,18 @@ def handle_stats(message):
 
     # Compute Age Statistics using the already given birthday strings.
     # Only birthdays with a full_date (i.e. %d %B %Y format) are considered.
-    avg_age_local, min_age_local, max_age_local, median_age_local = (
-        utils.compute_age_metrics(local_birthdays)
-    )
-    avg_age_global, min_age_global, max_age_global, median_age_global = (
-        utils.compute_age_metrics(global_birthdays)
-    )
+    (
+        avg_age_local,
+        min_age_local,
+        max_age_local,
+        median_age_local,
+    ) = utils.compute_age_metrics(local_birthdays)
+    (
+        avg_age_global,
+        min_age_global,
+        max_age_global,
+        median_age_global,
+    ) = utils.compute_age_metrics(global_birthdays)
 
     # Find most popular dates (day + month)
     most_popular_date_local, popular_date_count_local = utils.find_most_popular_date(
@@ -512,6 +573,57 @@ def handle_language_callback(call):
     bot.answer_callback_query(call.id)
 
 
+@bot.callback_query_handler(func=lambda call: call.data.startswith("settings_"))
+def handle_settings_callback(call):
+    """Handle settings menu interactions"""
+    chat_id = call.message.chat.id
+
+    if call.data == "settings_notif_time":
+        bot.edit_message_text(
+            i18n.get_message("settings_notif_time_title", chat_id),
+            chat_id=chat_id,
+            message_id=call.message.message_id,
+            reply_markup=get_notification_time_keyboard(chat_id),
+            parse_mode="Markdown",
+        )
+        bot.answer_callback_query(call.id)
+
+    elif call.data == "settings_language":
+        bot.edit_message_reply_markup(
+            chat_id=chat_id,
+            message_id=call.message.message_id,
+            reply_markup=get_language_keyboard(),
+        )
+        bot.answer_callback_query(call.id)
+
+    elif call.data.startswith("settings_hour_"):
+        hour = int(call.data.split("_")[2])
+        db.set_notification_hour(chat_id, hour)
+        bot.edit_message_reply_markup(
+            chat_id=chat_id,
+            message_id=call.message.message_id,
+            reply_markup=get_notification_time_keyboard(chat_id),
+        )
+        bot.answer_callback_query(
+            call.id,
+            i18n.get_message("settings_notif_time_set", chat_id, hour=f"{hour:02d}"),
+        )
+
+    elif call.data == "settings_back_main":
+        bot.edit_message_text(
+            i18n.get_message("settings_title", chat_id),
+            chat_id=chat_id,
+            message_id=call.message.message_id,
+            reply_markup=get_settings_keyboard(chat_id),
+            parse_mode="Markdown",
+        )
+        bot.answer_callback_query(call.id)
+
+    elif call.data == "settings_back":
+        handle_start(call.message)
+        bot.answer_callback_query(call.id)
+
+
 @bot.callback_query_handler(func=lambda call: call.data.startswith("support_pay_"))
 def handle_support_payment_callback(call):
     """Handle payment button clicks"""
@@ -662,12 +774,11 @@ def process_birthday_pings():
         minutes = 5
         time.sleep(minutes * 60)
 
-        if not utils.is_daytime():
-            continue
-
         try:
             # Reset flags for birthdays that are far from current date
             db.reset_birthday_reminder_flags()
+
+            current_hour_utc = datetime.now(timezone.utc).hour
 
             for days in REMINDED_DAYS:
                 upcoming_birthdays = db.get_upcoming_birthdays(days)
@@ -675,6 +786,12 @@ def process_birthday_pings():
                 for id, chat_id, name, birthday_str, has_year in upcoming_birthdays:
                     user_settings = db.get_reminder_settings(chat_id)
                     if not user_settings:
+                        continue
+
+                    notification_hour = db.get_notification_hour(chat_id)
+                    if not utils.is_in_notification_window(
+                        current_hour_utc, notification_hour
+                    ):
                         continue
 
                     birthday = datetime.strptime(birthday_str, "%Y-%m-%d")
@@ -759,14 +876,26 @@ def process_backup_pings():
             due_pings = db.get_active_backup_pings_due()
 
             for chat_id, _ in due_pings:
-                db.update_backup_ping(chat_id)
-
-                all_birthdays = get_all_birthdays_formatted(chat_id)
-                bot.send_message(
-                    chat_id,
-                    f"{i18n.get_message('latest_backup', chat_id)}\n{all_birthdays}",
-                    parse_mode="Markdown",
-                )
+                try:
+                    all_birthdays = get_all_birthdays_formatted(chat_id)
+                    bot.send_message(
+                        chat_id,
+                        f"{i18n.get_message('latest_backup', chat_id)}\n{all_birthdays}",
+                        parse_mode="Markdown",
+                    )
+                    db.update_backup_ping(chat_id)
+                except telebot.apihelper.ApiTelegramException as e:
+                    if e.error_code == 403:
+                        logging.warning(
+                            f"Bot was blocked by user {chat_id}, deactivating backup ping"
+                        )
+                        db.unregister_backup_ping(chat_id)
+                    else:
+                        logging.error(
+                            f"Telegram API error for user {chat_id} during backup ping: {e}"
+                        )
+                except Exception as e:
+                    logging.error(f"Error sending backup ping to user {chat_id}: {e}")
 
         except Exception as e:
             logging.error(f"Error during backup ping processing: {e}")
@@ -837,6 +966,7 @@ def handle_callback_query(call):
         call.data.startswith("reminder_")
         or call.data.startswith("lang_")
         or call.data.startswith("support_pay_")
+        or call.data.startswith("settings_")
     ):
         return
 
@@ -853,7 +983,7 @@ def handle_callback_query(call):
         "delete_birthday": TCommand.DeleteBirthday,
         "stats": TCommand.Stats,
         "share": TCommand.Share,
-        "language": TCommand.Language,
+        "settings": TCommand.Settings,
         "support": TCommand.Support,
     }
 
@@ -876,11 +1006,11 @@ def handle_callback_query(call):
             handle_stats(message)
         elif command == TCommand.Share:
             send_share_message(message)
-        elif command == TCommand.Language:
+        elif command == TCommand.Settings:
             bot.send_message(
                 chat_id,
-                i18n.get_button_text("language", chat_id),
-                reply_markup=get_language_keyboard(),
+                i18n.get_message("settings_title", chat_id),
+                reply_markup=get_settings_keyboard(chat_id),
                 parse_mode="Markdown",
             )
         elif command == TCommand.Support:
@@ -932,6 +1062,14 @@ def handle_message(message):
         elif command == TCommand.Share:
             send_share_message(message)
             return
+        elif command == TCommand.Settings:
+            bot.send_message(
+                chat_id,
+                i18n.get_message("settings_title", chat_id),
+                reply_markup=get_settings_keyboard(chat_id),
+                parse_mode="Markdown",
+            )
+            return
         elif command == TCommand.Support:
             handle_support(message)
             return
@@ -963,6 +1101,14 @@ def handle_message(message):
             return
         elif command == TCommand.Share:
             send_share_message(message)
+            return
+        elif command == TCommand.Settings:
+            bot.send_message(
+                chat_id,
+                i18n.get_message("settings_title", chat_id),
+                reply_markup=get_settings_keyboard(chat_id),
+                parse_mode="Markdown",
+            )
             return
         elif command == TCommand.Support:
             handle_support(message)

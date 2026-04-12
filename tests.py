@@ -37,7 +37,6 @@ class TestTimestampParser(unittest.TestCase):
 
 
 class TestParseDate(unittest.TestCase):
-
     def test_valid_dates_with_year(self):
         self.assertEqual(parse_date("5.06.2001"), (True, datetime(2001, 6, 5), True))
         self.assertEqual(
@@ -1324,7 +1323,9 @@ class TestYearBoundaryReset(unittest.TestCase):
         result = cursor.fetchone()
         conn.close()
 
-        self.assertTrue(result[0], "Flags should NOT be reset for birthdays within 10 days")
+        self.assertTrue(
+            result[0], "Flags should NOT be reset for birthdays within 10 days"
+        )
 
     def test_reset_clears_distant_birthday(self):
         """Birthdays more than 10 days away should have flags reset."""
@@ -1380,9 +1381,13 @@ class TestYearBoundaryReset(unittest.TestCase):
         )
 
         if days_to_jan3 <= 10:
-            self.assertTrue(result[0], "Jan 3 birthday close to today should keep flags")
+            self.assertTrue(
+                result[0], "Jan 3 birthday close to today should keep flags"
+            )
         else:
-            self.assertFalse(result[0], "Jan 3 birthday far from today should have flags reset")
+            self.assertFalse(
+                result[0], "Jan 3 birthday far from today should have flags reset"
+            )
 
     def test_reset_at_exact_boundary_10_days(self):
         """Birthday exactly 11 days away should be reset; 10 days should not."""
@@ -1534,6 +1539,71 @@ class TestSafeReplaceYear(unittest.TestCase):
         date = datetime(2020, 2, 28)
         result = db._safe_replace_year(date, 2025)
         self.assertEqual(result, datetime(2025, 2, 28))
+
+
+class TestNotificationSettings(unittest.TestCase):
+    """Test notification hour DB functions."""
+
+    def setUp(self):
+        self.test_db = "test_notification_settings.db"
+        self.original_db = db.DB_FILE
+        db.DB_FILE = self.test_db
+        db.init_db()
+
+    def tearDown(self):
+        db.DB_FILE = self.original_db
+        if os.path.exists(self.test_db):
+            os.remove(self.test_db)
+
+    def test_get_notification_hour_default(self):
+        """Returns 7 (UTC) when not set."""
+        result = db.get_notification_hour(999999)
+        self.assertEqual(result, 7)
+
+    def test_set_and_get_notification_hour(self):
+        """Round-trip save/load."""
+        db.set_notification_hour(12345, 14)
+        result = db.get_notification_hour(12345)
+        self.assertEqual(result, 14)
+
+    def test_notification_hour_persists_with_reminder_settings(self):
+        """Changing notification hour doesn't affect reminder_days and vice versa."""
+        db.update_reminder_settings(12345, [0, 1, 7])
+        db.set_notification_hour(12345, 21)
+
+        self.assertEqual(db.get_notification_hour(12345), 21)
+        self.assertEqual(db.get_reminder_settings(12345), [0, 1, 7])
+
+        # Update reminder settings — notification hour should persist
+        db.update_reminder_settings(12345, [0, 3])
+        self.assertEqual(db.get_notification_hour(12345), 21)
+
+
+class TestNotificationWindow(unittest.TestCase):
+    """Test is_in_notification_window() utility."""
+
+    def test_in_window_basic(self):
+        """Start of window should be in range."""
+        self.assertTrue(utils.is_in_notification_window(7, 7))
+
+    def test_in_window_end(self):
+        """Last hour of 8-hour window (offset 7) should be in range."""
+        self.assertTrue(utils.is_in_notification_window(14, 7))
+
+    def test_outside_window(self):
+        """Hour after 8-hour window should be out of range."""
+        self.assertFalse(utils.is_in_notification_window(15, 7))
+
+    def test_window_wraps_midnight(self):
+        """Window starting at 21 should wrap past midnight (21..4)."""
+        self.assertTrue(utils.is_in_notification_window(23, 21))
+        self.assertTrue(utils.is_in_notification_window(0, 21))
+        self.assertTrue(utils.is_in_notification_window(4, 21))
+        self.assertFalse(utils.is_in_notification_window(5, 21))
+
+    def test_before_window(self):
+        """Hour before window should be out of range."""
+        self.assertFalse(utils.is_in_notification_window(6, 7))
 
 
 if __name__ == "__main__":

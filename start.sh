@@ -73,8 +73,8 @@ fi
 if [ "$USE_DOCKER" = true ]; then
     # Docker running
     echo "🐳 Starting with Docker..."
-    sudo docker compose down
-    sudo docker compose up --build
+    sudo docker-compose down
+    sudo docker-compose up --build
 else
     # Direct Python execution
     echo "🐍 Starting with Python directly..."

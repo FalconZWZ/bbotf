@@ -162,6 +162,17 @@ def init_db() -> None:
         """
         )
         conn.commit()
+
+        # Migration: add notification_hour column if not present
+        try:
+            cursor.execute(
+                "ALTER TABLE user_reminder_settings ADD COLUMN notification_hour INTEGER DEFAULT 7"
+            )
+            conn.commit()
+            logging.info("Added notification_hour column to user_reminder_settings")
+        except sqlite3.OperationalError:
+            pass  # Column already exists
+
         logging.info("Database initialized successfully.")
     except sqlite3.Error as e:
         logging.error(f"Error initializing the database: {e}")
@@ -198,10 +209,12 @@ def update_reminder_settings(chat_id, days):
 
         cursor.execute(
             """
-            INSERT OR REPLACE INTO user_reminder_settings (chat_id, reminder_days)
+            INSERT INTO user_reminder_settings (chat_id, reminder_days)
             VALUES (?, ?)
+            ON CONFLICT(chat_id) DO UPDATE SET
+                reminder_days = ?
         """,
-            (chat_id, days_str),
+            (chat_id, days_str, days_str),
         )
 
         conn.commit()
@@ -458,9 +471,7 @@ def mark_birthday_reminder_sent(birthday_id: int, days_until: int) -> None:
     """
     # Validate input to prevent SQL injection
     if days_until not in [0, 1, 3, 7]:
-        logging.error(
-            f"Invalid days_until value: {days_until}. Must be 0, 1, 3, or 7."
-        )
+        logging.error(f"Invalid days_until value: {days_until}. Must be 0, 1, 3, or 7.")
         return
 
     conn = None
@@ -671,6 +682,56 @@ def set_user_language(chat_id: int, language_code: str) -> None:
 
     except sqlite3.Error as e:
         logging.error(f"Error setting user language: {e}")
+        utils.log_exception(e)
+    finally:
+        if conn:
+            conn.close()
+
+
+DEFAULT_NOTIFICATION_HOUR = 7  # UTC (= 10:00 Moscow)
+
+
+def get_notification_hour(chat_id: int) -> int:
+    """Get user's preferred notification hour in UTC. Returns 7 (UTC) as default."""
+    conn = None
+    try:
+        conn = sqlite3.connect(DB_FILE)
+        cursor = conn.cursor()
+        cursor.execute(
+            "SELECT notification_hour FROM user_reminder_settings WHERE chat_id = ?",
+            (chat_id,),
+        )
+        result = cursor.fetchone()
+        if result and result[0] is not None:
+            return result[0]
+        return DEFAULT_NOTIFICATION_HOUR
+    except sqlite3.Error as e:
+        logging.error(f"Error getting notification hour: {e}")
+        utils.log_exception(e)
+        return DEFAULT_NOTIFICATION_HOUR
+    finally:
+        if conn:
+            conn.close()
+
+
+def set_notification_hour(chat_id: int, hour: int) -> None:
+    """Set user's preferred notification hour in UTC (0-23)."""
+    conn = None
+    try:
+        conn = sqlite3.connect(DB_FILE)
+        cursor = conn.cursor()
+        cursor.execute(
+            """
+            INSERT INTO user_reminder_settings (chat_id, notification_hour)
+            VALUES (?, ?)
+            ON CONFLICT(chat_id) DO UPDATE SET
+                notification_hour = ?
+            """,
+            (chat_id, hour, hour),
+        )
+        conn.commit()
+    except sqlite3.Error as e:
+        logging.error(f"Error setting notification hour: {e}")
         utils.log_exception(e)
     finally:
         if conn:
