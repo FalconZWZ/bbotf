@@ -47,7 +47,7 @@ bot = telebot.TeleBot(TOKEN)
 user_states = {}
 
 # Global dictionary to track messages related to birthday registration
-birthday_registration_messages = defaultdict(list)
+birthday_registration_messages = defaultdict(set)
 # Global dictionary to track messages related to birthday deletion
 birthday_deletion_messages = defaultdict(list)
 # Global dictionary to track messages related to backup registration
@@ -302,13 +302,6 @@ def handle_stats(message):
         local_most_popular_month, local_count = "N/A", 0
 
     # Calculate the most popular birthday month globally.
-    global_month_counts = {}
-    for birthday in global_birthdays:
-        month = extract_month(birthday)
-        if month:
-            global_month_counts[month] = global_month_counts.get(month, 0) + 1
-
-    # Calculate most popular birthday month globally.
     global_month_counts = {}
     for birthday in global_birthdays:
         month = extract_month(birthday)
@@ -686,7 +679,7 @@ def process_birthday_pings():
 
                     birthday = datetime.strptime(birthday_str, "%Y-%m-%d")
                     current_year = datetime.now().year
-                    birthday_this_year = birthday.replace(year=current_year)
+                    birthday_this_year = db._safe_replace_year(birthday, current_year)
 
                     today = datetime.now().replace(
                         hour=0, minute=0, second=0, microsecond=0
@@ -763,26 +756,9 @@ def process_backup_pings():
         minutes = 5
         time.sleep(minutes * 60)
         try:
-            all_chat_ids = db.get_all_chat_ids()
-            if all_chat_ids is None:
-                logging.error("Failed to retrieve chat IDs")
-                continue
+            due_pings = db.get_active_backup_pings_due()
 
-            for chat_id in all_chat_ids:
-                chat_id = chat_id[0]
-
-                backup_ping_settings = db.select_from_backup_ping(chat_id)
-
-                if backup_ping_settings.is_active is False:
-                    continue
-
-                now = int(time.time())
-                delta_seconds = now - backup_ping_settings.last_updated_timestamp
-                settings_delta_seconds = backup_ping_settings.update_timedelta * 60
-
-                if delta_seconds < settings_delta_seconds:
-                    continue
-
+            for chat_id, _ in due_pings:
                 db.update_backup_ping(chat_id)
 
                 all_birthdays = get_all_birthdays_formatted(chat_id)

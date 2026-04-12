@@ -110,6 +110,7 @@ class TBirthday:
 
 def init_db() -> None:
     logging.debug(f"Initializing database at '{DB_FILE}'...")
+    conn = None
     try:
         conn = sqlite3.connect(DB_FILE)
         logging.info("Database connected successfully.")
@@ -161,48 +162,55 @@ def init_db() -> None:
         """
         )
         conn.commit()
-        conn.close()
         logging.info("Database initialized successfully.")
     except sqlite3.Error as e:
         logging.error(f"Error initializing the database: {e}")
         utils.log_exception(e)
+    finally:
+        if conn:
+            conn.close()
 
 
 def get_reminder_settings(chat_id):
     conn = sqlite3.connect(DB_FILE)
-    cursor = conn.cursor()
+    try:
+        cursor = conn.cursor()
 
-    cursor.execute(
-        "SELECT reminder_days FROM user_reminder_settings WHERE chat_id = ?", (chat_id,)
-    )
-    result = cursor.fetchone()
+        cursor.execute(
+            "SELECT reminder_days FROM user_reminder_settings WHERE chat_id = ?",
+            (chat_id,),
+        )
+        result = cursor.fetchone()
 
-    conn.close()
-
-    if result and result[0]:
-        return [int(x) for x in result[0].split(",")]
-    return []
+        if result and result[0]:
+            return [int(x) for x in result[0].split(",")]
+        return []
+    finally:
+        conn.close()
 
 
 def update_reminder_settings(chat_id, days):
     conn = sqlite3.connect(DB_FILE)
-    cursor = conn.cursor()
+    try:
+        cursor = conn.cursor()
 
-    days_str = ",".join(map(str, sorted(days)))
+        days_str = ",".join(map(str, sorted(days)))
 
-    cursor.execute(
-        """
-        INSERT OR REPLACE INTO user_reminder_settings (chat_id, reminder_days)
-        VALUES (?, ?)
-    """,
-        (chat_id, days_str),
-    )
+        cursor.execute(
+            """
+            INSERT OR REPLACE INTO user_reminder_settings (chat_id, reminder_days)
+            VALUES (?, ?)
+        """,
+            (chat_id, days_str),
+        )
 
-    conn.commit()
-    conn.close()
+        conn.commit()
+    finally:
+        conn.close()
 
 
 def get_all_birthdays_for_all_chats(need_id: bool = False) -> list[str]:
+    conn = None
     try:
         conn = sqlite3.connect(DB_FILE)
         cursor = conn.cursor()
@@ -223,14 +231,18 @@ def get_all_birthdays_for_all_chats(need_id: bool = False) -> list[str]:
             """,
         )
         birthdays = cursor.fetchall()
-        conn.close()
         return [str(TBirthday(birthday, need_id)) for birthday in birthdays]
     except sqlite3.Error as e:
         logging.error(f"Error retrieving birthdays from database: {e}")
         utils.log_exception(e)
+        return []
+    finally:
+        if conn:
+            conn.close()
 
 
 def get_all_birthdays(chat_id: int, need_id: bool = False) -> list[str]:
+    conn = None
     try:
         conn = sqlite3.connect(DB_FILE)
         cursor = conn.cursor()
@@ -253,14 +265,18 @@ def get_all_birthdays(chat_id: int, need_id: bool = False) -> list[str]:
             (chat_id,),
         )
         birthdays = cursor.fetchall()
-        conn.close()
         return [str(TBirthday(birthday, need_id)) for birthday in birthdays]
     except sqlite3.Error as e:
         logging.error(f"Error retrieving birthdays from database: {e}")
         utils.log_exception(e)
+        return []
+    finally:
+        if conn:
+            conn.close()
 
 
 def get_all_chat_ids() -> list[int]:
+    conn = None
     try:
         conn = sqlite3.connect(DB_FILE)
         cursor = conn.cursor()
@@ -270,14 +286,18 @@ def get_all_chat_ids() -> list[int]:
         """
         )
         chat_ids = cursor.fetchall()
-        conn.close()
         return chat_ids
     except sqlite3.Error as e:
         logging.error(f"Error retrieving chat_ids from database: {e}")
         utils.log_exception(e)
+        return []
+    finally:
+        if conn:
+            conn.close()
 
 
 def register_backup_ping(chat_id: int, update_timedelta: int) -> None:
+    conn = None
     try:
         conn = sqlite3.connect(DB_FILE)
         cursor = conn.cursor()
@@ -295,13 +315,16 @@ def register_backup_ping(chat_id: int, update_timedelta: int) -> None:
         )
 
         conn.commit()
-        conn.close()
     except sqlite3.Error as e:
         logging.error(f"Error registering backup ping: {e}")
         utils.log_exception(e)
+    finally:
+        if conn:
+            conn.close()
 
 
 def update_backup_ping(chat_id: int) -> None:
+    conn = None
     try:
         conn = sqlite3.connect(DB_FILE)
         cursor = conn.cursor()
@@ -314,13 +337,16 @@ def update_backup_ping(chat_id: int) -> None:
             (chat_id,),
         )
         conn.commit()
-        conn.close()
     except sqlite3.Error as e:
         logging.error(f"Error updating last backup sent: {e}")
         utils.log_exception(e)
+    finally:
+        if conn:
+            conn.close()
 
 
 def unregister_backup_ping(chat_id: int) -> None:
+    conn = None
     try:
         conn = sqlite3.connect(DB_FILE)
         cursor = conn.cursor()
@@ -333,13 +359,16 @@ def unregister_backup_ping(chat_id: int) -> None:
             (chat_id,),
         )
         conn.commit()
-        conn.close()
     except sqlite3.Error as e:
         logging.error(f"Error unregistering backup ping: {e}")
         utils.log_exception(e)
+    finally:
+        if conn:
+            conn.close()
 
 
 def select_from_backup_ping(chat_id: int) -> TBackupPingSettings:
+    conn = None
     try:
         conn = sqlite3.connect(DB_FILE)
         cursor = conn.cursor()
@@ -350,16 +379,20 @@ def select_from_backup_ping(chat_id: int) -> TBackupPingSettings:
             (chat_id,),
         )
         data = cursor.fetchone()
-        conn.close()
         return TBackupPingSettings(data)
     except sqlite3.Error as e:
         logging.error(f"Error retrieving last backup sent: {e}")
         utils.log_exception(e)
+        return TBackupPingSettings(None)
+    finally:
+        if conn:
+            conn.close()
 
 
 def register_birthday(
     chat_id: int, name: str, birthday: datetime, has_year: bool
 ) -> None:
+    conn = None
     try:
         conn = sqlite3.connect(DB_FILE)
         cursor = conn.cursor()
@@ -374,13 +407,16 @@ def register_birthday(
             (chat_id, name, birthday_str, has_year),
         )
         conn.commit()
-        conn.close()
     except sqlite3.Error as e:
         logging.error(f"Error registering birthday: {e}")
         utils.log_exception(e)
+    finally:
+        if conn:
+            conn.close()
 
 
 def get_upcoming_birthdays(days_ahead: int) -> list[tuple]:
+    conn = None
     try:
         conn = sqlite3.connect(DB_FILE)
         cursor = conn.cursor()
@@ -401,12 +437,15 @@ def get_upcoming_birthdays(days_ahead: int) -> list[tuple]:
         cursor.execute(query, (start_date_str, end_date_str))
 
         birthdays = cursor.fetchall()
-        conn.close()
 
         return birthdays
     except sqlite3.Error as e:
         logging.error(f"Error retrieving upcoming birthdays: {e}")
         utils.log_exception(e)
+        return []
+    finally:
+        if conn:
+            conn.close()
 
 
 def mark_birthday_reminder_sent(birthday_id: int, days_until: int) -> None:
@@ -417,14 +456,15 @@ def mark_birthday_reminder_sent(birthday_id: int, days_until: int) -> None:
         birthday_id: The ID of the birthday record
         days_until: Number of days until the birthday (0, 1, 3, or 7)
     """
-    try:
-        # Validate input to prevent SQL injection
-        if days_until not in [0, 1, 3, 7]:
-            logging.error(
-                f"Invalid days_until value: {days_until}. Must be 0, 1, 3, or 7."
-            )
-            return
+    # Validate input to prevent SQL injection
+    if days_until not in [0, 1, 3, 7]:
+        logging.error(
+            f"Invalid days_until value: {days_until}. Must be 0, 1, 3, or 7."
+        )
+        return
 
+    conn = None
+    try:
         conn = sqlite3.connect(DB_FILE)
         cursor = conn.cursor()
 
@@ -451,7 +491,6 @@ def mark_birthday_reminder_sent(birthday_id: int, days_until: int) -> None:
             )
 
         conn.commit()
-        conn.close()
 
         logging.debug(
             f"Marked {days_until}-day reminder as sent for birthday ID {birthday_id}"
@@ -460,6 +499,9 @@ def mark_birthday_reminder_sent(birthday_id: int, days_until: int) -> None:
     except sqlite3.Error as e:
         logging.error(f"Error marking reminder as sent: {e}")
         utils.log_exception(e)
+    finally:
+        if conn:
+            conn.close()
 
 
 def reset_birthday_reminder_flags() -> None:
@@ -468,14 +510,25 @@ def reset_birthday_reminder_flags() -> None:
     - More than 10 days in the future
     - More than 10 days in the past
     This ensures that reminders will be sent again next year and prevents duplicate reminders.
+
+    Uses circular day-of-year distance to correctly handle the Dec/Jan year boundary.
     """
+    conn = None
     try:
         conn = sqlite3.connect(DB_FILE)
         cursor = conn.cursor()
 
-        # Reset flags for birthdays that are either:
-        # 1. More than 10 days in the past
-        # 2. More than 10 days in the future
+        # Compute circular distance between birthday's month-day and today.
+        # This handles the year boundary correctly: Dec 30 is 3 days from Jan 2,
+        # not 362 days.
+        #
+        # Algorithm:
+        # 1. Build this year's occurrence of the birthday as a full date
+        # 2. Compute days difference from today using julianday
+        # 3. If it's negative (birthday already passed), also check distance
+        #    to next year's occurrence
+        # 4. Take the minimum absolute distance (closest occurrence)
+        # 5. Reset flags only if that distance > 10
         query = """
             UPDATE birthdays
             SET was_reminded_0_days_ago = FALSE,
@@ -489,19 +542,17 @@ def reset_birthday_reminder_flags() -> None:
                 OR was_reminded_7_days_ago = TRUE
             )
             AND (
-                -- Case 1: Birthday is more than 10 days in the past
-                (
-                    strftime('%m-%d', birthday) < strftime('%m-%d', date('now', '-10 days'))
-                    AND
-                    strftime('%m-%d', birthday) < strftime('%m-%d', 'now')
-                )
-                OR
-                -- Case 2: Birthday is more than 10 days in the future
-                (
-                    strftime('%m-%d', birthday) > strftime('%m-%d', date('now', '+10 days'))
-                    AND
-                    strftime('%m-%d', birthday) > strftime('%m-%d', 'now')
-                )
+                MIN(
+                    ABS(julianday(
+                        strftime('%Y', 'now') || '-' || strftime('%m-%d', birthday)
+                    ) - julianday('now')),
+                    ABS(julianday(
+                        (CAST(strftime('%Y', 'now') AS INTEGER) + 1) || '-' || strftime('%m-%d', birthday)
+                    ) - julianday('now')),
+                    ABS(julianday(
+                        (CAST(strftime('%Y', 'now') AS INTEGER) - 1) || '-' || strftime('%m-%d', birthday)
+                    ) - julianday('now'))
+                ) > 10
             )
         """
 
@@ -511,14 +562,17 @@ def reset_birthday_reminder_flags() -> None:
 
         if rows_affected > 0:
             logging.info(f"Reset reminder flags for {rows_affected} birthdays")
-        conn.close()
 
     except sqlite3.Error as e:
         logging.error(f"Error resetting birthday reminder flags: {e}")
         utils.log_exception(e)
+    finally:
+        if conn:
+            conn.close()
 
 
-def delete_birthday(chat_id: int, birthday_id: int) -> None:
+def delete_birthday(chat_id: int, birthday_id: int) -> int:
+    conn = None
     try:
         conn = sqlite3.connect(DB_FILE)
         cursor = conn.cursor()
@@ -532,18 +586,47 @@ def delete_birthday(chat_id: int, birthday_id: int) -> None:
         )
 
         conn.commit()
-        deleted_rows = cursor.rowcount
-        conn.close()
-
-        return deleted_rows
+        return cursor.rowcount
     except sqlite3.Error as e:
         logging.error(f"Error deleting birthday: {e}")
         utils.log_exception(e)
         return 0
+    finally:
+        if conn:
+            conn.close()
+
+
+def get_active_backup_pings_due() -> list[tuple]:
+    """Get chat_ids with active backup pings that are due for sending.
+
+    Returns list of (chat_id, update_timedelta) tuples where enough time
+    has elapsed since last backup was sent.
+    """
+    conn = None
+    try:
+        conn = sqlite3.connect(DB_FILE)
+        cursor = conn.cursor()
+        cursor.execute(
+            """
+            SELECT chat_id, update_timedelta FROM backup_ping_settings
+            WHERE is_active = TRUE
+            AND (strftime('%s', 'now') - strftime('%s', last_updated_timestamp))
+                >= update_timedelta * 60
+            """
+        )
+        return cursor.fetchall()
+    except sqlite3.Error as e:
+        logging.error(f"Error retrieving due backup pings: {e}")
+        utils.log_exception(e)
+        return []
+    finally:
+        if conn:
+            conn.close()
 
 
 def get_user_language(chat_id: int) -> str:
     """Get user's language preference. Returns 'en' as default."""
+    conn = None
     try:
         conn = sqlite3.connect(DB_FILE)
         cursor = conn.cursor()
@@ -553,17 +636,20 @@ def get_user_language(chat_id: int) -> str:
             (chat_id,),
         )
         result = cursor.fetchone()
-        conn.close()
 
         return result[0] if result else "en"
     except sqlite3.Error as e:
         logging.error(f"Error getting user language: {e}")
         utils.log_exception(e)
         return "en"
+    finally:
+        if conn:
+            conn.close()
 
 
 def set_user_language(chat_id: int, language_code: str) -> None:
     """Set user's language preference."""
+    conn = None
     try:
         conn = sqlite3.connect(DB_FILE)
         cursor = conn.cursor()
@@ -580,10 +666,12 @@ def set_user_language(chat_id: int, language_code: str) -> None:
         )
 
         conn.commit()
-        conn.close()
 
         logging.info(f"Set language to '{language_code}' for chat {chat_id}")
 
     except sqlite3.Error as e:
         logging.error(f"Error setting user language: {e}")
         utils.log_exception(e)
+    finally:
+        if conn:
+            conn.close()
