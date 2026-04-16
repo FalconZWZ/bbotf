@@ -784,63 +784,73 @@ def process_birthday_pings():
                 upcoming_birthdays = db.get_upcoming_birthdays(days)
 
                 for id, chat_id, name, birthday_str, has_year in upcoming_birthdays:
-                    user_settings = db.get_reminder_settings(chat_id)
-                    if not user_settings:
-                        continue
+                    try:
+                        user_settings = db.get_reminder_settings(chat_id)
+                        if not user_settings:
+                            continue
 
-                    notification_hour = db.get_notification_hour(chat_id)
-                    if not utils.is_in_notification_window(
-                        current_hour_utc, notification_hour
-                    ):
-                        continue
+                        notification_hour = db.get_notification_hour(chat_id)
+                        if not utils.is_in_notification_window(
+                            current_hour_utc, notification_hour
+                        ):
+                            continue
 
-                    birthday = datetime.strptime(birthday_str, "%Y-%m-%d")
-                    current_year = datetime.now().year
-                    birthday_this_year = db._safe_replace_year(birthday, current_year)
+                        birthday = datetime.strptime(birthday_str, "%Y-%m-%d")
+                        current_year = datetime.now().year
+                        birthday_this_year = db._safe_replace_year(
+                            birthday, current_year
+                        )
 
-                    today = datetime.now().replace(
-                        hour=0, minute=0, second=0, microsecond=0
-                    )
-                    days_until = (birthday_this_year - today).days
+                        today = datetime.now().replace(
+                            hour=0, minute=0, second=0, microsecond=0
+                        )
+                        days_until = (birthday_this_year - today).days
 
-                    # Only send reminder if user has enabled this day.
-                    if days_until in user_settings:
-                        try:
-                            age_text = ""
-                            if has_year:
-                                age = current_year - birthday.year
-                                age_text = i18n.get_message(
-                                    "age_suffix", chat_id, age=age
-                                )
+                        if days_until not in user_settings:
+                            continue
 
-                            if days_until == 0:
-                                bot.send_message(chat_id, "🎂")
-                                reminder_text = i18n.get_message(
-                                    "today_birthday",
-                                    chat_id,
-                                    name=name,
-                                    age_text=age_text,
-                                )
-                            else:
-                                reminder_text = i18n.get_message(
-                                    "upcoming_birthday",
-                                    chat_id,
-                                    days=days_until,
-                                    name=name,
-                                    age_text=age_text,
-                                )
+                        age_text = ""
+                        if has_year:
+                            age = current_year - birthday.year
+                            age_text = i18n.get_message("age_suffix", chat_id, age=age)
 
-                            bot.send_message(chat_id, reminder_text)
+                        if days_until == 0:
+                            bot.send_message(chat_id, "🎂")
+                            reminder_text = i18n.get_message(
+                                "today_birthday",
+                                chat_id,
+                                name=name,
+                                age_text=age_text,
+                            )
+                        else:
+                            reminder_text = i18n.get_message(
+                                "upcoming_birthday",
+                                chat_id,
+                                days=days_until,
+                                name=name,
+                                age_text=age_text,
+                            )
+
+                        bot.send_message(chat_id, reminder_text)
+                        db.mark_birthday_reminder_sent(id, days_until)
+                    except telebot.apihelper.ApiTelegramException as e:
+                        if e.error_code == 429 or e.error_code >= 500:
+                            logging.warning(
+                                f"Temporary Telegram error {e.error_code} for "
+                                f"user {chat_id}, will retry: {e}"
+                            )
+                        else:
+                            logging.warning(
+                                f"Permanent Telegram error {e.error_code} for "
+                                f"user {chat_id}, marking reminder as sent: {e}"
+                            )
                             db.mark_birthday_reminder_sent(id, days_until)
-                        except telebot.apihelper.ApiTelegramException as e:
-                            if e.error_code == 403:  # Bot was blocked by the user
-                                logging.warning(
-                                    f"Bot was blocked by user {chat_id}, skipping notifications"
-                                )
-                                # Mark reminder as sent to avoid retrying
-                                db.mark_birthday_reminder_sent(id, days_until)
-                            else:
-                                raise  # Re-raise other API exceptions
+                    except Exception as e:
+                        logging.error(
+                            f"Error processing birthday {id} for "
+                            f"chat {chat_id}: {e}"
+                        )
+                        utils.log_exception(e)
 
         except Exception as e:
             logging.error(f"Error during birthday ping processing: {e}")
@@ -885,15 +895,17 @@ def process_backup_pings():
                     )
                     db.update_backup_ping(chat_id)
                 except telebot.apihelper.ApiTelegramException as e:
-                    if e.error_code == 403:
+                    if e.error_code == 429 or e.error_code >= 500:
                         logging.warning(
-                            f"Bot was blocked by user {chat_id}, deactivating backup ping"
+                            f"Temporary Telegram error {e.error_code} for "
+                            f"user {chat_id} during backup ping, will retry: {e}"
+                        )
+                    else:
+                        logging.warning(
+                            f"Permanent Telegram error {e.error_code} for "
+                            f"user {chat_id}, deactivating backup ping: {e}"
                         )
                         db.unregister_backup_ping(chat_id)
-                    else:
-                        logging.error(
-                            f"Telegram API error for user {chat_id} during backup ping: {e}"
-                        )
                 except Exception as e:
                     logging.error(f"Error sending backup ping to user {chat_id}: {e}")
 
