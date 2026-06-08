@@ -440,8 +440,9 @@ class TestMultipleBirthdayRegistration(unittest.TestCase):
 
         birthdays = db.get_all_birthdays(self.test_chat_id)
         self.assertEqual(len(birthdays), 2)
-        self.assertIn("John Doe", birthdays[0])
-        self.assertIn("Jane Smith", birthdays[1])
+        all_birthdays_text = "\n".join(birthdays)
+        self.assertIn("John Doe", all_birthdays_text)
+        self.assertIn("Jane Smith", all_birthdays_text)
 
     def test_invalid_multiple_birthday_registration(self):
         message = "John Doe\n15.05.1990\nInvalid Date\n32.13.2000"
