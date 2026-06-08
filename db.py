@@ -309,6 +309,30 @@ def get_all_chat_ids() -> list[int]:
             conn.close()
 
 
+def get_all_distinct_chat_ids() -> list[int]:
+    conn = None
+    try:
+        conn = sqlite3.connect(DB_FILE)
+        cursor = conn.cursor()
+        cursor.execute(
+            """
+            SELECT DISTINCT chat_id FROM (
+                SELECT chat_id FROM birthdays
+                UNION
+                SELECT chat_id FROM user_reminder_settings
+            )
+            """
+        )
+        return [row[0] for row in cursor.fetchall()]
+    except sqlite3.Error as e:
+        logging.error(f"Error retrieving distinct chat_ids: {e}")
+        utils.log_exception(e)
+        return []
+    finally:
+        if conn:
+            conn.close()
+
+
 def register_backup_ping(chat_id: int, update_timedelta: int) -> None:
     conn = None
     try:
