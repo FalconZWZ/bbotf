@@ -7,8 +7,10 @@ services:
       dockerfile: Dockerfile
     container_name: telegram_bot
     volumes:
-      - ./data.db:/app/data.db
-      - ./backup_ping_settings.db:/app/backup_ping_settings.db
+      - bot_data:/app
     env_file:
       - .env
     restart: always
+
+volumes:
+  bot_data:

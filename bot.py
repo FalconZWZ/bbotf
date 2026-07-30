@@ -504,7 +504,7 @@ def handle_start(message):
 {commands_msg}
 
 {backup_ping_msg}
-{i18n.get_message("contribute", chat_id)}
+
 """
 
     bot.send_message(
