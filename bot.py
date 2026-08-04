@@ -152,13 +152,52 @@ def is_group_chat(message) -> bool:
     return message.chat.type in ["group", "supergroup"]
 
 
+def safe_delete_message(chat_id, message_id):
+    """Delete a message, logging (instead of raising) if it can't be deleted.
+
+    Telegram returns a 400 error when a message has already been deleted,
+    is too old to delete, or otherwise can't be removed. We don't want any
+    of those cases to crash the bot, so we swallow the error here.
+    """
+    try:
+        bot.delete_message(chat_id, message_id)
+    except telebot.apihelper.ApiTelegramException as e:
+        logging.warning(
+            f"Could not delete message {message_id} in chat {chat_id}: {e}"
+        )
+    except Exception as e:
+        logging.warning(
+            f"Unexpected error deleting message {message_id} in chat {chat_id}: {e}"
+        )
+
+
+def safe_edit_message_text(*args, **kwargs):
+    """Edit a message's text, logging (instead of raising) on failure."""
+    try:
+        bot.edit_message_text(*args, **kwargs)
+    except telebot.apihelper.ApiTelegramException as e:
+        logging.warning(f"Could not edit message text: {e}")
+    except Exception as e:
+        logging.warning(f"Unexpected error editing message text: {e}")
+
+
+def safe_edit_message_reply_markup(*args, **kwargs):
+    """Edit a message's reply markup, logging (instead of raising) on failure."""
+    try:
+        bot.edit_message_reply_markup(*args, **kwargs)
+    except telebot.apihelper.ApiTelegramException as e:
+        logging.warning(f"Could not edit message reply markup: {e}")
+    except Exception as e:
+        logging.warning(f"Unexpected error editing message reply markup: {e}")
+
+
 def remove_keyboard(message):
     delete_message = bot.send_message(
         message.chat.id,
         i18n.get_message("keyboard_removed", message.chat.id),
         reply_markup=ReplyKeyboardRemove(),
     )
-    bot.delete_message(delete_message.chat.id, delete_message.message_id)
+    safe_delete_message(delete_message.chat.id, delete_message.message_id)
 
 
 def get_reply_markup(message) -> InlineKeyboardMarkup | None:
@@ -463,7 +502,7 @@ def handle_start(message):
     user_states[chat_id] = TUserState.Default
 
     # remove /start command itself
-    bot.delete_message(chat_id, message.message_id)
+    safe_delete_message(chat_id, message.message_id)
 
     # Remove any existing keyboard
     remove_keyboard(message)
@@ -537,7 +576,7 @@ def handle_reminder_callback(call):
 
     db.update_reminder_settings(chat_id, current_settings)
 
-    bot.edit_message_reply_markup(
+    safe_edit_message_reply_markup(
         chat_id=chat_id,
         message_id=call.message.message_id,
         reply_markup=get_reminder_settings_keyboard(chat_id),
@@ -579,7 +618,7 @@ def handle_settings_callback(call):
     chat_id = call.message.chat.id
 
     if call.data == "settings_notif_time":
-        bot.edit_message_text(
+        safe_edit_message_text(
             i18n.get_message("settings_notif_time_title", chat_id),
             chat_id=chat_id,
             message_id=call.message.message_id,
@@ -589,7 +628,7 @@ def handle_settings_callback(call):
         bot.answer_callback_query(call.id)
 
     elif call.data == "settings_language":
-        bot.edit_message_reply_markup(
+        safe_edit_message_reply_markup(
             chat_id=chat_id,
             message_id=call.message.message_id,
             reply_markup=get_language_keyboard(),
@@ -599,7 +638,7 @@ def handle_settings_callback(call):
     elif call.data.startswith("settings_hour_"):
         hour = int(call.data.split("_")[2])
         db.set_notification_hour(chat_id, hour)
-        bot.edit_message_reply_markup(
+        safe_edit_message_reply_markup(
             chat_id=chat_id,
             message_id=call.message.message_id,
             reply_markup=get_notification_time_keyboard(chat_id),
@@ -610,7 +649,7 @@ def handle_settings_callback(call):
         )
 
     elif call.data == "settings_back_main":
-        bot.edit_message_text(
+        safe_edit_message_text(
             i18n.get_message("settings_title", chat_id),
             chat_id=chat_id,
             message_id=call.message.message_id,
@@ -1042,7 +1081,7 @@ def handle_message(message):
 
     if user_message == "/clear":
         # Secret command to clear keyboard
-        bot.delete_message(chat_id, message.message_id)
+        safe_delete_message(chat_id, message.message_id)
         # Remove keyboard and clean up that message
         remove_keyboard(message)
         return
@@ -1146,10 +1185,10 @@ def handle_message(message):
 
                 user_states[chat_id] = TUserState.Default
 
-                bot.delete_message(chat_id, message.message_id)
+                safe_delete_message(chat_id, message.message_id)
 
                 for old_message_id in register_backup_messages[chat_id]:
-                    bot.delete_message(chat_id, old_message_id)
+                    safe_delete_message(chat_id, old_message_id)
 
                 if chat_id in register_backup_messages.keys():
                     del register_backup_messages[chat_id]
@@ -1208,7 +1247,7 @@ def handle_message(message):
                 birthday_deletion_messages[chat_id].append(message.message_id)
 
                 for old_message_id in birthday_deletion_messages[chat_id]:
-                    bot.delete_message(chat_id, old_message_id)
+                    safe_delete_message(chat_id, old_message_id)
 
                 if chat_id in birthday_deletion_messages.keys():
                     del birthday_deletion_messages[chat_id]
@@ -1258,10 +1297,10 @@ def handle_message(message):
 
                 user_states[chat_id] = TUserState.Default
 
-                bot.delete_message(chat_id, message.message_id)
+                safe_delete_message(chat_id, message.message_id)
 
                 for old_message_id in birthday_registration_messages[chat_id]:
-                    bot.delete_message(chat_id, old_message_id)
+                    safe_delete_message(chat_id, old_message_id)
 
                 if chat_id in birthday_registration_messages.keys():
                     del birthday_registration_messages[chat_id]
