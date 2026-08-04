@@ -462,8 +462,11 @@ def handle_start(message):
     chat_id = message.chat.id
     user_states[chat_id] = TUserState.Default
 
-    # remove /start command itself
-    bot.delete_message(chat_id, message.message_id)
+    # remove /start command itself (safely ignore errors)
+    try:
+        bot.delete_message(chat_id, message.message_id)
+    except Exception as e:
+        logging.debug(f"Could not delete message {message.message_id}: {e}")
 
     # Remove any existing keyboard
     remove_keyboard(message)
