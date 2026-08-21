@@ -6,12 +6,12 @@ from datetime import datetime, timedelta
 import utils
 
 # Database file selection based on environment
-DB_FILE = os.getenv("DB_FILE", "data.db")
+DB_FILE = os.getenv("DB_FILE", "/app/data/data.db")
 PRESTABLE_MODE = os.getenv("PRESTABLE_MODE", "false").lower() == "true"
 
 # Use separate database for prestable
 if PRESTABLE_MODE:
-    DB_FILE = "data_prestable.db"
+    DB_FILE = "/app/data/data_prestable.db"
 
 logging.basicConfig(
     level=logging.INFO,
