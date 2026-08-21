@@ -152,13 +152,36 @@ def is_group_chat(message) -> bool:
     return message.chat.type in ["group", "supergroup"]
 
 
+def safe_delete_message(chat_id, message_id):
+    """Safely delete a message, ignoring errors when the message
+    is already deleted or otherwise inaccessible.
+
+    Catches telebot.apihelper.ApiTelegramException and silently
+    ignores it when the error code is 400 (Bad Request, e.g.
+    "message can't be deleted" or "message to delete not found").
+    Any other unexpected exception is re-raised.
+    """
+    try:
+        bot.delete_message(chat_id, message_id)
+    except telebot.apihelper.ApiTelegramException as e:
+        if getattr(e, "error_code", None) == 400:
+            logging.debug(
+                f"Could not delete message {message_id} in chat {chat_id}: {e}"
+            )
+        else:
+            logging.warning(
+                f"Unexpected error deleting message {message_id} in chat {chat_id}: {e}"
+            )
+            raise
+
+
 def remove_keyboard(message):
     delete_message = bot.send_message(
         message.chat.id,
         i18n.get_message("keyboard_removed", message.chat.id),
         reply_markup=ReplyKeyboardRemove(),
     )
-    bot.delete_message(delete_message.chat.id, delete_message.message_id)
+    safe_delete_message(delete_message.chat.id, delete_message.message_id)
 
 
 def get_reply_markup(message) -> InlineKeyboardMarkup | None:
@@ -463,10 +486,7 @@ def handle_start(message):
     user_states[chat_id] = TUserState.Default
 
     # remove /start command itself (safely ignore errors)
-    try:
-        bot.delete_message(chat_id, message.message_id)
-    except Exception as e:
-        logging.debug(f"Could not delete message {message.message_id}: {e}")
+    safe_delete_message(chat_id, message.message_id)
 
     # Remove any existing keyboard
     remove_keyboard(message)
@@ -1045,7 +1065,7 @@ def handle_message(message):
 
     if user_message == "/clear":
         # Secret command to clear keyboard
-        bot.delete_message(chat_id, message.message_id)
+        safe_delete_message(chat_id, message.message_id)
         # Remove keyboard and clean up that message
         remove_keyboard(message)
         return
@@ -1149,10 +1169,10 @@ def handle_message(message):
 
                 user_states[chat_id] = TUserState.Default
 
-                bot.delete_message(chat_id, message.message_id)
+                safe_delete_message(chat_id, message.message_id)
 
                 for old_message_id in register_backup_messages[chat_id]:
-                    bot.delete_message(chat_id, old_message_id)
+                    safe_delete_message(chat_id, old_message_id)
 
                 if chat_id in register_backup_messages.keys():
                     del register_backup_messages[chat_id]
@@ -1211,7 +1231,7 @@ def handle_message(message):
                 birthday_deletion_messages[chat_id].append(message.message_id)
 
                 for old_message_id in birthday_deletion_messages[chat_id]:
-                    bot.delete_message(chat_id, old_message_id)
+                    safe_delete_message(chat_id, old_message_id)
 
                 if chat_id in birthday_deletion_messages.keys():
                     del birthday_deletion_messages[chat_id]
@@ -1261,10 +1281,10 @@ def handle_message(message):
 
                 user_states[chat_id] = TUserState.Default
 
-                bot.delete_message(chat_id, message.message_id)
+                safe_delete_message(chat_id, message.message_id)
 
                 for old_message_id in birthday_registration_messages[chat_id]:
-                    bot.delete_message(chat_id, old_message_id)
+                    safe_delete_message(chat_id, old_message_id)
 
                 if chat_id in birthday_registration_messages.keys():
                     del birthday_registration_messages[chat_id]
