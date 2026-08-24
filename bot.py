@@ -8,6 +8,7 @@ from datetime import datetime, timezone
 
 import telebot
 from dotenv import load_dotenv
+from requests.exceptions import ConnectionError, ReadTimeout
 from telebot.types import (InlineKeyboardButton, InlineKeyboardMarkup,
                            ReplyKeyboardRemove)
 
@@ -1328,7 +1329,21 @@ if __name__ == "__main__":
         log_cleaner_thread = threading.Thread(target=log_cleaner, daemon=True)
         log_cleaner_thread.start()
 
-        bot.polling(none_stop=True, timeout=60, long_polling_timeout=60)
+        while True:
+            try:
+                bot.polling(none_stop=True, timeout=60, long_polling_timeout=60)
+                break
+            except (ReadTimeout, ConnectionError) as e:
+                logging.warning(
+                    f"Network error during polling: {e}. Reconnecting in 10 seconds..."
+                )
+                time.sleep(10)
+            except Exception as e:
+                logging.error(
+                    f"Unexpected error during polling: {e}. Reconnecting in 10 seconds..."
+                )
+                utils.log_exception(e)
+                time.sleep(10)
 
     except KeyboardInterrupt:
         logging.info("Shutting down bot gracefully...")
