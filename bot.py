@@ -50,14 +50,14 @@ bot = telebot.TeleBot(TOKEN)
 def setup_bot_commands():
     """Register the bot's command menu (shown when users type '/' in Telegram)."""
     commands = [
-        telebot.types.BotCommand("start", "Start the bot"),
-        telebot.types.BotCommand("backup", "Backup your birthdays list"),
-        telebot.types.BotCommand("add", "Add a new birthday"),
-        telebot.types.BotCommand("remove", "Delete a birthday"),
-        telebot.types.BotCommand("stats", "View birthday statistics"),
-        telebot.types.BotCommand("settings", "Configure bot settings"),
-        telebot.types.BotCommand("support", "Support the bot"),
-        telebot.types.BotCommand("language", "Change the bot language"),
+        telebot.types.BotCommand("start", "Запустить бота"),
+        telebot.types.BotCommand("backup", "Резервная копия дней рождения"),
+        telebot.types.BotCommand("add", "Добавить день рождения"),
+        telebot.types.BotCommand("remove", "Удалить день рождения"),
+        telebot.types.BotCommand("stats", "Статистика дней рождения"),
+        telebot.types.BotCommand("settings", "Настройки бота"),
+        telebot.types.BotCommand("support", "Поддержать автора"),
+        telebot.types.BotCommand("language", "Изменить язык"),
     ]
     bot.set_my_commands(commands)
 
