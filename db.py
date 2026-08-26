@@ -72,6 +72,25 @@ def _safe_replace_year(date: datetime, new_year: int) -> datetime:
         raise
 
 
+def get_age_suffix(age: int) -> str:
+    """
+    Return the correct Russian noun suffix for an age value (год/года/лет).
+
+    Args:
+        age: The age to determine the suffix for.
+
+    Returns:
+        The correct Russian suffix: "год", "года", or "лет".
+    """
+    if age % 100 in (11, 12, 13, 14):
+        return "лет"
+    if age % 10 == 1:
+        return "год"
+    if age % 10 in (2, 3, 4):
+        return "года"
+    return "лет"
+
+
 class TBirthday:
     def __init__(self, select_result: tuple, need_id: bool = False):
         self.need_id = need_id
@@ -101,7 +120,7 @@ class TBirthday:
             birthday_this_year = _safe_replace_year(self.birthday, current_year)
             if datetime.now() < birthday_this_year:
                 age -= 1
-            age_text = f", _(Возраст: {age} лет)_"
+            age_text = f", _(Возраст: {age} {get_age_suffix(age)})_"
 
         id_text = f", ID: {self.id}" if self.need_id else ""
 
