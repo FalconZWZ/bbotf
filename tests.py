@@ -148,6 +148,7 @@ class TestValidateBirthdayInput(unittest.TestCase):
         db.DB_FILE = self.original_db_file
 
     def test_incomplete_input(self):
+        i18n.set_user_language(self.test_chat_id, "en")
         message = "John Doe\n15.05.1990\nJane Smith"
         success, error_message = validate_birthday_input(message, self.test_chat_id)
         self.assertFalse(success)
@@ -159,6 +160,7 @@ class TestValidateBirthdayInput(unittest.TestCase):
         self.assertFalse(success)
 
     def test_invalid_date_format(self):
+        i18n.set_user_language(self.test_chat_id, "en")
         message = "John Doe\n32.13.2000"
         success, error_message = validate_birthday_input(message, self.test_chat_id)
         self.assertFalse(success)
@@ -208,7 +210,7 @@ class TestDatabase(unittest.TestCase):
         birthdays = db.get_all_birthdays(self.test_chat_id)
         self.assertEqual(len(birthdays), 1)
         self.assertIn(name, birthdays[0])
-        self.assertIn("15 May 1990", birthdays[0])
+        self.assertIn("15 мая 1990", birthdays[0])
 
         # Test deleting birthday
         birthday_id = 1  # First entry should have ID 1
@@ -312,7 +314,7 @@ class TestBirthdayAgeCalculation(unittest.TestCase):
 
         birthday_str = str(birthday)
         # Should show age 25 (birthday already happened)
-        self.assertIn("25 years", birthday_str)
+        self.assertIn("Возраст: 25 лет", birthday_str)
         self.assertIn("Test Person", birthday_str)
 
     def test_age_calculation_with_future_birthday(self):
@@ -335,7 +337,7 @@ class TestBirthdayAgeCalculation(unittest.TestCase):
 
         birthday_str = str(birthday)
         # Should show age 24 (birthday hasn't happened yet, so still 24)
-        self.assertIn("24 years", birthday_str)
+        self.assertIn("Возраст: 24 года", birthday_str)
         self.assertIn("Test Person", birthday_str)
 
     def test_birthday_without_year(self):
@@ -354,7 +356,7 @@ class TestBirthdayAgeCalculation(unittest.TestCase):
 
         birthday_str = str(birthday)
         # Should not show age
-        self.assertNotIn("years", birthday_str)
+        self.assertNotIn("Возраст", birthday_str)
         self.assertIn("Test Person", birthday_str)
 
     def test_birthday_with_id(self):
@@ -391,7 +393,7 @@ class TestBirthdayAgeCalculation(unittest.TestCase):
 
         birthday_str = str(birthday)
         # On the exact birthday, they should be 30 (birthday has happened today)
-        self.assertIn("30 years", birthday_str)
+        self.assertIn("Возраст: 30 лет", birthday_str)
 
     def test_leap_year_birthday_feb_29(self):
         """Test that Feb 29 birthday is handled correctly in non-leap years"""
@@ -413,10 +415,10 @@ class TestBirthdayAgeCalculation(unittest.TestCase):
         birthday_str = str(birthday)
 
         # Should contain the birthday date and name
-        self.assertIn("29 February 2020", birthday_str)
+        self.assertIn("29 февраля 2020", birthday_str)
         self.assertIn("Leap Year Person", birthday_str)
         # Should calculate age correctly (using Feb 28 for comparison)
-        self.assertIn("years", birthday_str)
+        self.assertIn("Возраст", birthday_str)
 
 
 class TestMultipleBirthdayRegistration(unittest.TestCase):
@@ -679,9 +681,10 @@ class TestInternationalization(unittest.TestCase):
         db.DB_FILE = self.original_db_file
 
     def test_default_language(self):
-        """Test that default language is English"""
+        """Test that a user who never chose a language gets Russian"""
         language = i18n.get_user_language(self.test_chat_id)
-        self.assertEqual(language, "en")
+        self.assertEqual(language, db.DEFAULT_LANGUAGE)
+        self.assertEqual(language, "ru")
 
     def test_set_user_language(self):
         """Test setting user language preference"""
@@ -706,11 +709,12 @@ class TestInternationalization(unittest.TestCase):
 
         # Should remain default
         language = i18n.get_user_language(self.test_chat_id)
-        self.assertEqual(language, "en")
+        self.assertEqual(language, db.DEFAULT_LANGUAGE)
 
     def test_get_button_text(self):
         """Test getting translated button text"""
-        # Test English (default)
+        # Test English (set explicitly -- the default is Russian)
+        i18n.set_user_language(self.test_chat_id, "en")
         start_button_en = i18n.get_button_text("start", self.test_chat_id)
         self.assertEqual(start_button_en, "🚀 Start")
 
@@ -721,7 +725,8 @@ class TestInternationalization(unittest.TestCase):
 
     def test_get_message(self):
         """Test getting translated messages"""
-        # Test English
+        # Test English (set explicitly -- the default is Russian)
+        i18n.set_user_language(self.test_chat_id, "en")
         welcome_en = i18n.get_message("welcome_title", self.test_chat_id)
         self.assertIn("Welcome", welcome_en)
 
@@ -798,6 +803,9 @@ class TestInternationalization(unittest.TestCase):
 
     def test_convenience_functions_exist(self):
         """Test that all convenience functions exist and work"""
+        # Test English (set explicitly -- the default is Russian)
+        i18n.set_user_language(self.test_chat_id, "en")
+
         # Test button text function
         start_text = i18n.get_button_text("start", self.test_chat_id)
         self.assertIsInstance(start_text, str)
@@ -1007,7 +1015,8 @@ class TestInternationalization(unittest.TestCase):
         """Test that utils functions use correct translations"""
         from utils import validate_birthday_input
 
-        # Test incomplete input in English (default)
+        # Test incomplete input in English (set explicitly -- default is Russian)
+        i18n.set_user_language(self.test_chat_id, "en")
         message_incomplete = "John Doe"
         success, error_message = validate_birthday_input(
             message_incomplete, self.test_chat_id

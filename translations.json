@@ -418,5 +418,55 @@
       "en": "December",
       "ru": "Декабрь"
     }
+  },
+  "month_names_genitive": {
+    "January": {
+      "en": "January",
+      "ru": "января"
+    },
+    "February": {
+      "en": "February",
+      "ru": "февраля"
+    },
+    "March": {
+      "en": "March",
+      "ru": "марта"
+    },
+    "April": {
+      "en": "April",
+      "ru": "апреля"
+    },
+    "May": {
+      "en": "May",
+      "ru": "мая"
+    },
+    "June": {
+      "en": "June",
+      "ru": "июня"
+    },
+    "July": {
+      "en": "July",
+      "ru": "июля"
+    },
+    "August": {
+      "en": "August",
+      "ru": "августа"
+    },
+    "September": {
+      "en": "September",
+      "ru": "сентября"
+    },
+    "October": {
+      "en": "October",
+      "ru": "октября"
+    },
+    "November": {
+      "en": "November",
+      "ru": "ноября"
+    },
+    "December": {
+      "en": "December",
+      "ru": "декабря"
+    }
   }
 }

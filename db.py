@@ -9,6 +9,12 @@ import utils
 DB_FILE = os.getenv("DB_FILE", "/app/data/data.db")
 PRESTABLE_MODE = os.getenv("PRESTABLE_MODE", "false").lower() == "true"
 
+# Language used for anyone who never pressed the language button.
+# Must stay in sync with I18n.default_language in i18n.py: i18n asks db
+# first and only falls back to its own default when db returns something
+# unsupported, so a mismatch here silently wins over that default.
+DEFAULT_LANGUAGE = "ru"
+
 # Use separate database for prestable
 if PRESTABLE_MODE:
     DB_FILE = "/app/data/data_prestable.db"
@@ -97,19 +103,32 @@ class TBirthday:
 
         if select_result is None:
             self.id = None
+            self.chat_id = None
             self.name = None
             self.birthday = None
             self.has_year = False
             return
 
         self.id = int(select_result[0])
+        self.chat_id = select_result[1]
         self.name = select_result[2]
         self.birthday = datetime.strptime(select_result[3], "%Y-%m-%d")
         self.has_year = bool(select_result[4])
 
     def __str__(self):
-        birthday_format = "%d %B %Y" if self.has_year else "%d %B"
-        birthday_str = self.birthday.strftime(birthday_format)
+        # Imported here rather than at module level: i18n imports db, so a
+        # top-level import would be circular.
+        import i18n
+
+        # strftime("%B") renders month names in the process locale, which is
+        # C inside the container -- that is why the date came out as
+        # "26 August 1996" while the rest of the line was in Russian.
+        month = i18n.get_month_name_genitive(self.birthday.month, self.chat_id)
+
+        if self.has_year:
+            birthday_str = f"{self.birthday.day:02d} {month} {self.birthday.year}"
+        else:
+            birthday_str = f"{self.birthday.day:02d} {month}"
 
         age_text = ""
         if self.has_year:
@@ -149,7 +168,7 @@ def init_db() -> None:
             """
             CREATE TABLE IF NOT EXISTS user_language_settings (
                 chat_id INTEGER PRIMARY KEY,
-                language_code TEXT DEFAULT "en",
+                language_code TEXT DEFAULT "ru",
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                 updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             );
@@ -679,7 +698,7 @@ def get_active_backup_pings_due() -> list[tuple]:
 
 
 def get_user_language(chat_id: int) -> str:
-    """Get user's language preference. Returns 'en' as default."""
+    """Get user's language preference, DEFAULT_LANGUAGE if never set."""
     conn = None
     try:
         conn = sqlite3.connect(DB_FILE)
@@ -691,11 +710,11 @@ def get_user_language(chat_id: int) -> str:
         )
         result = cursor.fetchone()
 
-        return result[0] if result else "en"
+        return result[0] if result else DEFAULT_LANGUAGE
     except sqlite3.Error as e:
         logging.error(f"Error getting user language: {e}")
         utils.log_exception(e)
-        return "en"
+        return DEFAULT_LANGUAGE
     finally:
         if conn:
             conn.close()

@@ -10,6 +10,24 @@ from typing import Any, Dict
 
 import db
 
+# Month keys used inside translations.json. Indexed by month number - 1.
+# Deliberately not derived from strftime("%B"): that follows the process
+# locale, so the lookup key would silently change with LC_TIME.
+MONTH_KEYS = [
+    "January",
+    "February",
+    "March",
+    "April",
+    "May",
+    "June",
+    "July",
+    "August",
+    "September",
+    "October",
+    "November",
+    "December",
+]
+
 
 class I18n:
     """Internationalization class for managing translations"""
@@ -125,6 +143,29 @@ class I18n:
         """Get translated month name"""
         return self.get_text(f"month_names.{month_name}", chat_id)
 
+    def get_month_name_genitive(self, month_number: int, chat_id=None) -> str:
+        """Get the month name as it appears inside a date ("26 августа 1996").
+
+        Russian dates take the genitive case, so the nominative forms in
+        month_names ("Август") read wrong here. English is identical in
+        both cases.
+
+        Args:
+            month_number: 1-12
+            chat_id: whose language to use; None falls back to the default
+                language, for listings that span chats and have no single
+                user to ask.
+        """
+        if not 1 <= month_number <= 12:
+            logging.warning(f"Invalid month number: {month_number}")
+            return str(month_number)
+
+        key = f"month_names_genitive.{MONTH_KEYS[month_number - 1]}"
+
+        if chat_id is None:
+            return self._get_text_by_lang(key, self.default_language)
+        return self.get_text(key, chat_id)
+
     def get_button_text(self, button_key: str, chat_id: int) -> str:
         """Get translated button text"""
         return self.get_text(f"buttons.{button_key}", chat_id)
@@ -176,3 +217,8 @@ def get_button_description(button_key: str, chat_id: int) -> str:
 def get_month_name(month_name: str, chat_id: int) -> str:
     """Convenience function to get translated month name"""
     return i18n.get_month_name(month_name, chat_id)
+
+
+def get_month_name_genitive(month_number: int, chat_id=None) -> str:
+    """Convenience function to get the month name for use inside a date"""
+    return i18n.get_month_name_genitive(month_number, chat_id)
