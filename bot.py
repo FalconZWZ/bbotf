@@ -1,6 +1,8 @@
 import enum
 import logging
 import os
+import signal
+import sys
 import threading
 import time
 from collections import defaultdict
@@ -48,7 +50,12 @@ bot = telebot.TeleBot(TOKEN)
 
 
 def setup_bot_commands():
-    """Register the bot's command menu (shown when users type '/' in Telegram)."""
+    """Register the bot's command menu (shown when users type '/' in Telegram).
+
+    This must be called after polling has been (re)started, otherwise it can
+    race with Telegram tearing down the previous getUpdates connection and
+    raise a 409 Conflict error.
+    """
     commands = [
         telebot.types.BotCommand("start", "Запустить бота"),
         telebot.types.BotCommand("backup", "Резервная копия дней рождения"),
@@ -59,10 +66,22 @@ def setup_bot_commands():
         telebot.types.BotCommand("support", "Поддержать автора"),
         telebot.types.BotCommand("language", "Изменить язык"),
     ]
-    bot.set_my_commands(commands)
+    try:
+        bot.set_my_commands(commands)
+        logging.info("Bot command menu registered successfully")
+    except ApiTelegramException as e:
+        if getattr(e, "error_code", None) == 409:
+            logging.warning(
+                f"409 Conflict while setting bot commands (another instance may "
+                f"still be shutting down): {e}"
+            )
+        else:
+            logging.error(f"Failed to set bot commands: {e}")
+            utils.log_exception(e)
+    except Exception as e:
+        logging.error(f"Unexpected error while setting bot commands: {e}")
+        utils.log_exception(e)
 
-
-setup_bot_commands()
 
 user_states = {}
 
@@ -1357,11 +1376,79 @@ def log_cleaner():
             time.sleep(60 * 60)
 
 
+def clear_previous_bot_state():
+    """Clear any lingering webhook/getUpdates state from a previous bot instance.
+
+    Telegram only allows a single consumer of getUpdates (polling) or a
+    webhook at a time. When a new instance deploys while an old one is still
+    shutting down, Telegram can respond to the new instance's polling
+    request with a 409 Conflict. Explicitly deleting the webhook (which also
+    drops any pending updates queue tied to the previous connection) before
+    starting to poll helps make sure the old instance's connection is
+    released first.
+    """
+    try:
+        logging.info("Clearing any previous webhook/polling state...")
+        bot.remove_webhook()
+        logging.info("Webhook cleared successfully")
+    except ApiTelegramException as e:
+        if getattr(e, "error_code", None) == 409:
+            logging.warning(
+                f"409 Conflict while clearing webhook (previous instance may "
+                f"still be shutting down): {e}"
+            )
+        else:
+            logging.error(f"Failed to clear webhook: {e}")
+            utils.log_exception(e)
+    except Exception as e:
+        logging.error(f"Unexpected error while clearing webhook: {e}")
+        utils.log_exception(e)
+
+
+def delayed_setup_bot_commands(delay_seconds: float = 3.0):
+    """Register the command menu shortly after polling has started.
+
+    Running this immediately after `bot.polling()` is invoked (rather than
+    before) avoids racing with Telegram's cleanup of the previous instance's
+    connection, which is a common source of 409 Conflict errors.
+    """
+    time.sleep(delay_seconds)
+    setup_bot_commands()
+
+
+def handle_shutdown_signal(signum, frame):
+    """Gracefully stop polling and exit on SIGTERM/SIGINT.
+
+    This helps prevent "ghost" getUpdates connections from lingering on
+    Telegram's side, which can otherwise cause 409 Conflict errors the next
+    time the bot starts up.
+    """
+    logging.info(f"Received signal {signum}, stopping bot gracefully...")
+    try:
+        bot.stop_polling()
+    except Exception as e:
+        logging.warning(f"Error while stopping polling: {e}")
+    sys.exit(0)
+
+
 if __name__ == "__main__":
     db.init_db()
 
-    logging.info("Bot is running...")
+    logging.info("Bot initialization starting...")
+
+    signal.signal(signal.SIGTERM, handle_shutdown_signal)
+    signal.signal(signal.SIGINT, handle_shutdown_signal)
+
     try:
+        # Ensure no stale webhook/polling connection from a previous instance
+        # is still holding Telegram's getUpdates lock before we start.
+        clear_previous_bot_state()
+
+        # Give Telegram a brief moment to fully release the previous
+        # instance's connection before we start polling.
+        logging.info("Waiting briefly for previous instance cleanup...")
+        time.sleep(2)
+
         logging.info("Starting backup ping thread...")
         backup_thread = threading.Thread(target=process_backup_pings, daemon=True)
         backup_thread.start()
@@ -1374,13 +1461,33 @@ if __name__ == "__main__":
         log_cleaner_thread = threading.Thread(target=log_cleaner, daemon=True)
         log_cleaner_thread.start()
 
+        logging.info("Bot is running...")
+
         while True:
             try:
+                # Register the command menu only after polling is underway,
+                # to avoid racing Telegram's teardown of the old connection.
+                commands_thread = threading.Thread(
+                    target=delayed_setup_bot_commands, daemon=True
+                )
+                commands_thread.start()
+
                 bot.polling(none_stop=True, timeout=60, long_polling_timeout=60)
                 break
-            except (ReadTimeout, ConnectionError, ApiTelegramException) as e:
+            except ApiTelegramException as e:
+                if getattr(e, "error_code", None) == 409:
+                    logging.warning(
+                        f"409 Conflict during polling (another instance is still "
+                        f"active): {e}. Retrying in 10 seconds..."
+                    )
+                else:
+                    logging.warning(
+                        f"API error during polling: {e}. Reconnecting in 10 seconds..."
+                    )
+                time.sleep(10)
+            except (ReadTimeout, ConnectionError) as e:
                 logging.warning(
-                    f"Network or API error during polling: {e}. Reconnecting in 10 seconds..."
+                    f"Network error during polling: {e}. Reconnecting in 10 seconds..."
                 )
                 time.sleep(10)
             except Exception as e:
@@ -1392,6 +1499,11 @@ if __name__ == "__main__":
 
     except KeyboardInterrupt:
         logging.info("Shutting down bot gracefully...")
+
+        try:
+            bot.stop_polling()
+        except Exception as e:
+            logging.warning(f"Error while stopping polling: {e}")
 
         backup_thread.join(timeout=2)
         birthday_thread.join(timeout=2)
