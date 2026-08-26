@@ -49,6 +49,7 @@ bot = telebot.TeleBot(TOKEN)
 
 def setup_bot_commands():
     """Register the bot's command menu (shown when users type '/' in Telegram)."""
+    logging.info("Setting up bot commands...")
     commands = [
         telebot.types.BotCommand("start", "Запустить бота"),
         telebot.types.BotCommand("backup", "Резервная копия дней рождения"),
@@ -59,7 +60,14 @@ def setup_bot_commands():
         telebot.types.BotCommand("support", "Поддержать автора"),
         telebot.types.BotCommand("language", "Изменить язык"),
     ]
-    bot.set_my_commands(commands)
+    try:
+        bot.set_my_commands(commands)
+        logging.info(
+            "Bot commands successfully set: %s",
+            [cmd.command for cmd in commands],
+        )
+    except Exception as e:
+        logging.error("Failed to set bot commands: %s", e, exc_info=True)
 
 
 setup_bot_commands()
