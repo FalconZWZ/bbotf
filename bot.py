@@ -13,7 +13,8 @@ from dotenv import load_dotenv
 from requests.exceptions import ConnectionError, ReadTimeout
 from telebot.apihelper import ApiTelegramException
 from telebot.types import (InlineKeyboardButton, InlineKeyboardMarkup,
-                           ReplyKeyboardRemove, ReplyKeyboardMarkup, KeyboardButton)
+                           ReplyKeyboardRemove, ReplyKeyboardMarkup, KeyboardButton,
+                           BotCommandScopeDefault, BotCommandScopeAllPrivateChats)
 
 import db
 import i18n
@@ -67,7 +68,7 @@ def setup_bot_commands():
         telebot.types.BotCommand("language", "Изменить язык"),
     ]
     try:
-        bot.set_my_commands(commands)
+        bot.set_my_commands(commands, scope=BotCommandScopeAllPrivateChats())
         logging.info("Bot command menu registered successfully")
     except ApiTelegramException as e:
         if getattr(e, "error_code", None) == 409:
