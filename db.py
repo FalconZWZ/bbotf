@@ -84,6 +84,7 @@ class TBirthday:
             return
 
         self.id = int(select_result[0])
+        self.chat_id = int(select_result[1])
         self.name = select_result[2]
         self.birthday = datetime.strptime(select_result[3], "%Y-%m-%d")
         self.has_year = bool(select_result[4])
@@ -101,7 +102,11 @@ class TBirthday:
             birthday_this_year = _safe_replace_year(self.birthday, current_year)
             if datetime.now() < birthday_this_year:
                 age -= 1
-            age_text = f", _(Current age: {age} years)_"
+            language = get_user_language(self.chat_id)
+            if language == "ru":
+                age_text = f", _(Возраст: {age} лет)_"
+            else:
+                age_text = f", _(Current age: {age} years)_"
 
         id_text = f", ID: {self.id}" if self.need_id else ""
 

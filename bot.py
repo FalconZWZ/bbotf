@@ -737,7 +737,8 @@ def get_all_birthdays_formatted(chat_id: int, need_id: bool = False) -> str:
     for line in all_birthdays.split("\n"):
         date_str, name, *rest = line.split(", ")
         date = datetime.strptime(
-            date_str, "%d %B %Y" if "Current age" in line else "%d %B"
+            date_str,
+            "%d %B %Y" if ("Current age" in line or "Возраст" in line) else "%d %B",
         )
         month = date.strftime("%B")
         # Translate month name
@@ -768,7 +769,8 @@ def get_all_birthdays_for_share(chat_id: int) -> str:
     for line in all_birthdays.split("\n"):
         date_str, name, *rest = line.split(", ")
         date = datetime.strptime(
-            date_str, "%d %B %Y" if "Current age" in line else "%d %B"
+            date_str,
+            "%d %B %Y" if ("Current age" in line or "Возраст" in line) else "%d %B",
         )
         if date.year != utils.DEFAULT_BD_YEAR:
             formatted_date = date.strftime("%d.%m.%Y")
