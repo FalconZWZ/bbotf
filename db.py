@@ -101,7 +101,7 @@ class TBirthday:
             birthday_this_year = _safe_replace_year(self.birthday, current_year)
             if datetime.now() < birthday_this_year:
                 age -= 1
-            age_text = f", _(Current age: {age} years)_"
+            age_text = f", _(Возраст: {age} years)_"
 
         id_text = f", ID: {self.id}" if self.need_id else ""
 
