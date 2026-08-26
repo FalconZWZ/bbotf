@@ -11,7 +11,7 @@ from dotenv import load_dotenv
 from requests.exceptions import ConnectionError, ReadTimeout
 from telebot.apihelper import ApiTelegramException
 from telebot.types import (InlineKeyboardButton, InlineKeyboardMarkup,
-                           ReplyKeyboardRemove)
+                           ReplyKeyboardRemove, ReplyKeyboardMarkup, KeyboardButton)
 
 import db
 import i18n
@@ -204,48 +204,69 @@ def remove_keyboard(message):
     safe_delete_message(delete_message.chat.id, delete_message.message_id)
 
 
-def get_reply_markup(message) -> InlineKeyboardMarkup | None:
+def get_reply_markup(message) -> InlineKeyboardMarkup | ReplyKeyboardMarkup | None:
+    """Create appropriate keyboard based on chat type.
+    
+    - Private chats: InlineKeyboard (callbacks)
+    - Group chats: ReplyKeyboard (text buttons)
+    """
     chat_id = message.chat.id
-    markup = InlineKeyboardMarkup()
-    buttons = [
-        InlineKeyboardButton(
-            i18n.get_button_text("start", chat_id), callback_data="start"
-        ),
-        InlineKeyboardButton(
-            i18n.get_button_text("backup", chat_id), callback_data="backup"
-        ),
-        InlineKeyboardButton(
-            i18n.get_button_text("register_birthday", chat_id),
-            callback_data="register_birthday",
-        ),
-        InlineKeyboardButton(
-            i18n.get_button_text("register_backup", chat_id),
-            callback_data="register_backup",
-        ),
-        InlineKeyboardButton(
-            i18n.get_button_text("delete_birthday", chat_id),
-            callback_data="delete_birthday",
-        ),
-        InlineKeyboardButton(
-            i18n.get_button_text("unregister_backup", chat_id),
-            callback_data="unregister_backup",
-        ),
-        InlineKeyboardButton(
-            i18n.get_button_text("share", chat_id), callback_data="share"
-        ),
-        InlineKeyboardButton(
-            i18n.get_button_text("stats", chat_id), callback_data="stats"
-        ),
-        InlineKeyboardButton(
-            i18n.get_button_text("settings", chat_id), callback_data="settings"
-        ),
-        InlineKeyboardButton(
-            i18n.get_button_text("support", chat_id), callback_data="support"
-        ),
-    ]
-    for i in range(0, len(buttons), 2):
-        markup.row(*buttons[i : (i + 2)])
-    return markup
+    
+    # Use ReplyKeyboard for group chats, InlineKeyboard for private chats
+    if is_group_chat(message):
+        markup = ReplyKeyboardMarkup(row_width=2, resize_keyboard=True)
+        buttons = [
+            KeyboardButton(i18n.get_button_text("register_birthday", chat_id)),
+            KeyboardButton(i18n.get_button_text("delete_birthday", chat_id)),
+            KeyboardButton(i18n.get_button_text("backup", chat_id)),
+            KeyboardButton(i18n.get_button_text("stats", chat_id)),
+            KeyboardButton(i18n.get_button_text("share", chat_id)),
+            KeyboardButton(i18n.get_button_text("settings", chat_id)),
+        ]
+        markup.add(*buttons)
+        return markup
+    else:
+        # Private chat - use inline buttons
+        markup = InlineKeyboardMarkup()
+        buttons = [
+            InlineKeyboardButton(
+                i18n.get_button_text("start", chat_id), callback_data="start"
+            ),
+            InlineKeyboardButton(
+                i18n.get_button_text("backup", chat_id), callback_data="backup"
+            ),
+            InlineKeyboardButton(
+                i18n.get_button_text("register_birthday", chat_id),
+                callback_data="register_birthday",
+            ),
+            InlineKeyboardButton(
+                i18n.get_button_text("register_backup", chat_id),
+                callback_data="register_backup",
+            ),
+            InlineKeyboardButton(
+                i18n.get_button_text("delete_birthday", chat_id),
+                callback_data="delete_birthday",
+            ),
+            InlineKeyboardButton(
+                i18n.get_button_text("unregister_backup", chat_id),
+                callback_data="unregister_backup",
+            ),
+            InlineKeyboardButton(
+                i18n.get_button_text("share", chat_id), callback_data="share"
+            ),
+            InlineKeyboardButton(
+                i18n.get_button_text("stats", chat_id), callback_data="stats"
+            ),
+            InlineKeyboardButton(
+                i18n.get_button_text("settings", chat_id), callback_data="settings"
+            ),
+            InlineKeyboardButton(
+                i18n.get_button_text("support", chat_id), callback_data="support"
+            ),
+        ]
+        for i in range(0, len(buttons), 2):
+            markup.row(*buttons[i : (i + 2)])
+        return markup
 
 
 def get_language_keyboard() -> InlineKeyboardMarkup:
@@ -508,8 +529,9 @@ def handle_start(message):
     # remove /start command itself (safely ignore errors)
     safe_delete_message(chat_id, message.message_id)
 
-    # Remove any existing keyboard
-    remove_keyboard(message)
+    # Remove any existing keyboard only in private chats
+    if not is_group_chat(message):
+        remove_keyboard(message)
 
     backup_ping_settings = db.select_from_backup_ping(chat_id)
     if backup_ping_settings.is_active:
@@ -558,12 +580,14 @@ def handle_start(message):
     )
     logging.debug(f"Sent welcome message to Chat ID {chat_id}")
 
-    bot.send_message(
-        chat_id,
-        f"{i18n.get_message('configure_reminders', chat_id)}\n\n{i18n.get_message('reminder_example', chat_id)}",
-        reply_markup=get_reminder_settings_keyboard(chat_id),
-        parse_mode="Markdown",
-    )
+    # Only show reminder settings in private chats
+    if not is_group_chat(message):
+        bot.send_message(
+            chat_id,
+            f"{i18n.get_message('configure_reminders', chat_id)}\n\n{i18n.get_message('reminder_example', chat_id)}",
+            reply_markup=get_reminder_settings_keyboard(chat_id),
+            parse_mode="Markdown",
+        )
 
 
 @bot.callback_query_handler(func=lambda call: call.data.startswith("reminder_"))
