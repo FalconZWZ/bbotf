@@ -131,6 +131,13 @@ COMMAND_MAPPINGS = {
 }
 
 
+def normalize_command(text):
+    """Strip bot mention from command: /cmd@botname → /cmd"""
+    if text and "@" in text:
+        return text.split("@")[0]
+    return text
+
+
 def get_button_to_command_mapping(chat_id: int) -> dict:
     """Get button text to command mapping for specific user's language"""
     return {
@@ -1127,17 +1134,19 @@ def handle_callback_query(call):
 def handle_message(message):
     chat_id = message.chat.id
     user_message = message.text.strip()
+    normalized_message = normalize_command(user_message)
 
-    if user_message == "/clear":
+    if normalized_message == "/clear":
         # Secret command to clear keyboard
         safe_delete_message(chat_id, message.message_id)
         # Remove keyboard and clean up that message
         remove_keyboard(message)
         return
 
-    # Handle text commands (like /start)
-    if user_message in COMMAND_MAPPINGS:
-        command = COMMAND_MAPPINGS[user_message]
+    # Handle text commands (like /start), stripping @botname suffix if present
+    # (e.g. /start@FalconZZZ_bdatebot sent from Telegram's command menu)
+    if normalized_message in COMMAND_MAPPINGS:
+        command = COMMAND_MAPPINGS[normalized_message]
         if command == TCommand.Start:
             handle_start(message)
             return
