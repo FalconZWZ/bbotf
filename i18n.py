@@ -17,7 +17,7 @@ class I18n:
     def __init__(self, translations_file: str = "translations.json"):
         self.translations_file = translations_file
         self.translations: Dict[str, Any] = {}
-        self.default_language = "en"
+        self.default_language = "ru"
         self.supported_languages = ["en", "ru"]
         self.load_translations()
 
