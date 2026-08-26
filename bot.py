@@ -841,6 +841,32 @@ def handle_successful_payment(message):
         utils.log_exception(e)
 
 
+def parse_display_date(date_str: str) -> tuple:
+    """Split a date as rendered by TBirthday.__str__ ("09 мая 2018").
+
+    Returns (day, month, year); year is None for entries stored without
+    one.
+
+    datetime.strptime("%d %B") cannot do this: %B only understands the
+    process locale (English inside the container), so it began raising
+    ValueError the moment months started rendering in Russian and took
+    /backup down with it. Returning parts rather than a datetime also
+    avoids constructing 29 February in the yearless case, where the
+    placeholder year 1900 is not a leap year.
+    """
+    parts = date_str.split()
+    if len(parts) not in (2, 3):
+        raise ValueError(f"Unrecognized date string: {date_str!r}")
+
+    month = i18n.parse_month_name(parts[1])
+    if month is None:
+        raise ValueError(f"Unknown month name in {date_str!r}")
+
+    day = int(parts[0])
+    year = int(parts[2]) if len(parts) == 3 else None
+    return day, month, year
+
+
 def get_all_birthdays_formatted(chat_id: int, need_id: bool = False) -> str:
     all_birthdays = get_all_birthdays(chat_id, need_id)
 
@@ -850,13 +876,12 @@ def get_all_birthdays_formatted(chat_id: int, need_id: bool = False) -> str:
     birthdays_by_month = {}
     for line in all_birthdays.split("\n"):
         date_str = line.split(",")[0].strip()
-        try:
-            date = datetime.strptime(date_str, "%d %B %Y")
-        except ValueError:
-            date = datetime.strptime(date_str, "%d %B")
-        month = date.strftime("%B")
-        # Translate month name
-        translated_month = i18n.get_month_name(month, chat_id)
+        _, month_number, _ = parse_display_date(date_str)
+        # Section headers take the nominative form ("Август"), unlike the
+        # genitive used inside a date ("26 августа 1996").
+        translated_month = i18n.get_month_name(
+            i18n.MONTH_KEYS[month_number - 1], chat_id
+        )
         if translated_month not in birthdays_by_month:
             birthdays_by_month[translated_month] = []
         birthdays_by_month[translated_month].append(line)
@@ -882,14 +907,11 @@ def get_all_birthdays_for_share(chat_id: int) -> str:
     formatted_birthdays = []
     for line in all_birthdays.split("\n"):
         date_str, name, *rest = line.split(", ")
-        try:
-            date = datetime.strptime(date_str, "%d %B %Y")
-        except ValueError:
-            date = datetime.strptime(date_str, "%d %B")
-        if date.year != utils.DEFAULT_BD_YEAR:
-            formatted_date = date.strftime("%d.%m.%Y")
+        day, month, year = parse_display_date(date_str)
+        if year is not None and year != utils.DEFAULT_BD_YEAR:
+            formatted_date = f"{day:02d}.{month:02d}.{year}"
         else:
-            formatted_date = date.strftime("%d.%m")
+            formatted_date = f"{day:02d}.{month:02d}"
         formatted_birthdays.append(name)
         formatted_birthdays.append(formatted_date)
 

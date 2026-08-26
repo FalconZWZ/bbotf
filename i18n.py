@@ -166,6 +166,35 @@ class I18n:
             return self._get_text_by_lang(key, self.default_language)
         return self.get_text(key, chat_id)
 
+    def parse_month_name(self, name: str):
+        """Reverse-map a month name to its number (1-12), or None.
+
+        Accepts every supported language and both the nominative
+        (month_names) and genitive (month_names_genitive) forms, so
+        strings rendered by an older build still parse.
+
+        Exists because datetime.strptime("%B") only understands the
+        process locale: once months started rendering in Russian, any
+        code round-tripping a formatted date back through strptime blew
+        up with ValueError.
+        """
+        if not name:
+            return None
+
+        if not getattr(self, "_month_lookup", None):
+            lookup = {}
+            for index, key in enumerate(MONTH_KEYS, start=1):
+                for section in ("month_names", "month_names_genitive"):
+                    entry = self.translations.get(section, {}).get(key, {})
+                    if isinstance(entry, dict):
+                        for value in entry.values():
+                            if isinstance(value, str):
+                                lookup[value.strip().lower()] = index
+                lookup[key.lower()] = index
+            self._month_lookup = lookup
+
+        return self._month_lookup.get(name.strip().lower())
+
     def get_button_text(self, button_key: str, chat_id: int) -> str:
         """Get translated button text"""
         return self.get_text(f"buttons.{button_key}", chat_id)
@@ -222,3 +251,8 @@ def get_month_name(month_name: str, chat_id: int) -> str:
 def get_month_name_genitive(month_number: int, chat_id=None) -> str:
     """Convenience function to get the month name for use inside a date"""
     return i18n.get_month_name_genitive(month_number, chat_id)
+
+
+def parse_month_name(name: str):
+    """Convenience function to map a month name back to its number"""
+    return i18n.parse_month_name(name)
