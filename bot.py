@@ -116,19 +116,62 @@ class TCommand(enum.Enum):
     Settings = "settings"
 
 
-# Command mappings for text commands
+# Command mappings for text commands.
+# Keys must be lowercase, without the leading slash and without the
+# "@botusername" suffix -- see extract_command() below, which normalizes
+# incoming text before looking it up here.
 COMMAND_MAPPINGS = {
-    "/start": TCommand.Start,
-    "/help": TCommand.Start,
-    "/backup": TCommand.Backup,
-    "/register_birthday": TCommand.RegisterBirthday,
-    "/register_backup": TCommand.RegisterBackup,
-    "/unregister_backup": TCommand.UnregisterBackup,
-    "/delete_birthday": TCommand.DeleteBirthday,
-    "/share": TCommand.Share,
-    "/stats": TCommand.Stats,
-    "/support": TCommand.Support,
+    "start": TCommand.Start,
+    "help": TCommand.Start,
+    "menu": TCommand.Start,
+    "backup": TCommand.Backup,
+    "register_birthday": TCommand.RegisterBirthday,
+    "add": TCommand.RegisterBirthday,
+    "register_backup": TCommand.RegisterBackup,
+    "unregister_backup": TCommand.UnregisterBackup,
+    "delete_birthday": TCommand.DeleteBirthday,
+    "remove": TCommand.DeleteBirthday,
+    "delete": TCommand.DeleteBirthday,
+    "share": TCommand.Share,
+    "stats": TCommand.Stats,
+    "support": TCommand.Support,
+    "settings": TCommand.Settings,
+    "language": TCommand.Language,
 }
+
+
+def extract_command(text: str) -> str | None:
+    """Normalize a slash command out of raw message text.
+
+    Telegram appends "@botusername" to commands sent in group chats (and
+    whenever a command is tapped from the command menu there), so a plain
+    string comparison against "/start" silently fails. This strips that
+    suffix, drops any arguments and lowercases the result.
+
+    Returns the bare command name (no leading slash), or None if the text
+    is not a command.
+
+    Examples:
+        "/start"                       -> "start"
+        "/start@FalconZZZ_bdatebot"    -> "start"
+        "/Add@SomeBot extra args"      -> "add"
+        "hello"                        -> None
+    """
+    if not text:
+        return None
+
+    text = text.strip()
+    if not text.startswith("/"):
+        return None
+
+    # Keep only the first token: "/remove 1, 2" -> "/remove"
+    command = text.split(maxsplit=1)[0]
+    # Drop the leading slash
+    command = command[1:]
+    # Drop the "@botusername" suffix that Telegram adds in group chats
+    command = command.split("@", 1)[0]
+
+    return command.lower() or None
 
 
 def get_button_to_command_mapping(chat_id: int) -> dict:
@@ -223,69 +266,74 @@ def remove_keyboard(message):
     safe_delete_message(delete_message.chat.id, delete_message.message_id)
 
 
-def get_reply_markup(message) -> InlineKeyboardMarkup | ReplyKeyboardMarkup | None:
-    """Create appropriate keyboard based on chat type.
-    
-    - Private chats: InlineKeyboard (callbacks)
-    - Group chats: ReplyKeyboard (text buttons)
+def get_persistent_menu(message) -> ReplyKeyboardMarkup:
+    """Build the persistent menu shown under the text input field.
+
+    Used in both private and group chats so the menu never disappears
+    after /start.
     """
     chat_id = message.chat.id
-    
-    # Use ReplyKeyboard for group chats, InlineKeyboard for private chats
-    if is_group_chat(message):
-        markup = ReplyKeyboardMarkup(row_width=2, resize_keyboard=True)
-        buttons = [
-            KeyboardButton(i18n.get_button_text("register_birthday", chat_id)),
-            KeyboardButton(i18n.get_button_text("delete_birthday", chat_id)),
-            KeyboardButton(i18n.get_button_text("backup", chat_id)),
-            KeyboardButton(i18n.get_button_text("stats", chat_id)),
-            KeyboardButton(i18n.get_button_text("share", chat_id)),
-            KeyboardButton(i18n.get_button_text("settings", chat_id)),
-        ]
-        markup.add(*buttons)
-        return markup
-    else:
-        # Private chat - use inline buttons
-        markup = InlineKeyboardMarkup()
-        buttons = [
-            InlineKeyboardButton(
-                i18n.get_button_text("start", chat_id), callback_data="start"
-            ),
-            InlineKeyboardButton(
-                i18n.get_button_text("backup", chat_id), callback_data="backup"
-            ),
-            InlineKeyboardButton(
-                i18n.get_button_text("register_birthday", chat_id),
-                callback_data="register_birthday",
-            ),
-            InlineKeyboardButton(
-                i18n.get_button_text("register_backup", chat_id),
-                callback_data="register_backup",
-            ),
-            InlineKeyboardButton(
-                i18n.get_button_text("delete_birthday", chat_id),
-                callback_data="delete_birthday",
-            ),
-            InlineKeyboardButton(
-                i18n.get_button_text("unregister_backup", chat_id),
-                callback_data="unregister_backup",
-            ),
-            InlineKeyboardButton(
-                i18n.get_button_text("share", chat_id), callback_data="share"
-            ),
-            InlineKeyboardButton(
-                i18n.get_button_text("stats", chat_id), callback_data="stats"
-            ),
-            InlineKeyboardButton(
-                i18n.get_button_text("settings", chat_id), callback_data="settings"
-            ),
-            InlineKeyboardButton(
-                i18n.get_button_text("support", chat_id), callback_data="support"
-            ),
-        ]
-        for i in range(0, len(buttons), 2):
-            markup.row(*buttons[i : (i + 2)])
-        return markup
+
+    markup = ReplyKeyboardMarkup(row_width=2, resize_keyboard=True)
+    buttons = [
+        KeyboardButton(i18n.get_button_text("register_birthday", chat_id)),
+        KeyboardButton(i18n.get_button_text("delete_birthday", chat_id)),
+        KeyboardButton(i18n.get_button_text("backup", chat_id)),
+        KeyboardButton(i18n.get_button_text("stats", chat_id)),
+        KeyboardButton(i18n.get_button_text("share", chat_id)),
+        KeyboardButton(i18n.get_button_text("settings", chat_id)),
+    ]
+    markup.add(*buttons)
+    return markup
+
+
+def get_reply_markup(message) -> InlineKeyboardMarkup:
+    """Build the inline keyboard attached under the welcome message.
+
+    Shown in both private and group chats.
+    """
+    chat_id = message.chat.id
+
+    markup = InlineKeyboardMarkup()
+    buttons = [
+        InlineKeyboardButton(
+            i18n.get_button_text("start", chat_id), callback_data="start"
+        ),
+        InlineKeyboardButton(
+            i18n.get_button_text("backup", chat_id), callback_data="backup"
+        ),
+        InlineKeyboardButton(
+            i18n.get_button_text("register_birthday", chat_id),
+            callback_data="register_birthday",
+        ),
+        InlineKeyboardButton(
+            i18n.get_button_text("register_backup", chat_id),
+            callback_data="register_backup",
+        ),
+        InlineKeyboardButton(
+            i18n.get_button_text("delete_birthday", chat_id),
+            callback_data="delete_birthday",
+        ),
+        InlineKeyboardButton(
+            i18n.get_button_text("unregister_backup", chat_id),
+            callback_data="unregister_backup",
+        ),
+        InlineKeyboardButton(
+            i18n.get_button_text("share", chat_id), callback_data="share"
+        ),
+        InlineKeyboardButton(
+            i18n.get_button_text("stats", chat_id), callback_data="stats"
+        ),
+        InlineKeyboardButton(
+            i18n.get_button_text("settings", chat_id), callback_data="settings"
+        ),
+        InlineKeyboardButton(
+            i18n.get_button_text("support", chat_id), callback_data="support"
+        ),
+    ]
+    for i in range(0, len(buttons), 2):
+        markup.row(*buttons[i : (i + 2)])
+    return markup
 
 
 def get_language_keyboard() -> InlineKeyboardMarkup:
@@ -548,10 +596,6 @@ def handle_start(message):
     # remove /start command itself (safely ignore errors)
     safe_delete_message(chat_id, message.message_id)
 
-    # Remove any existing keyboard only in private chats
-    if not is_group_chat(message):
-        remove_keyboard(message)
-
     backup_ping_settings = db.select_from_backup_ping(chat_id)
     if backup_ping_settings.is_active:
         backup_ping_msg = (
@@ -607,6 +651,15 @@ def handle_start(message):
             reply_markup=get_reminder_settings_keyboard(chat_id),
             parse_mode="Markdown",
         )
+
+    # A message can carry only one reply_markup, so the persistent menu
+    # (the buttons under the input field) is attached to a final short
+    # message. Sent in both private and group chats.
+    bot.send_message(
+        chat_id,
+        i18n.get_message("menu_ready", chat_id),
+        reply_markup=get_persistent_menu(message),
+    )
 
 
 @bot.callback_query_handler(func=lambda call: call.data.startswith("reminder_"))
@@ -1084,43 +1137,67 @@ def handle_callback_query(call):
         "stats": TCommand.Stats,
         "share": TCommand.Share,
         "settings": TCommand.Settings,
+        "language": TCommand.Language,
         "support": TCommand.Support,
     }
 
-    if call.data in command_mapping:
-        command = command_mapping[call.data]
-
-        if command == TCommand.Start:
-            handle_start(message)
-        elif command == TCommand.Backup:
-            send_backup(message)
-        elif command == TCommand.RegisterBirthday:
-            register_birthday(message)
-        elif command == TCommand.RegisterBackup:
-            register_backup(message)
-        elif command == TCommand.UnregisterBackup:
-            unregister_backup(message)
-        elif command == TCommand.DeleteBirthday:
-            handle_deletion(message)
-        elif command == TCommand.Stats:
-            handle_stats(message)
-        elif command == TCommand.Share:
-            send_share_message(message)
-        elif command == TCommand.Settings:
-            bot.send_message(
-                chat_id,
-                i18n.get_message("settings_title", chat_id),
-                reply_markup=get_settings_keyboard(chat_id),
-                parse_mode="Markdown",
-            )
-        elif command == TCommand.Support:
-            handle_support(message)
-        else:
-            bot.answer_callback_query(
-                call.id, i18n.get_message("unknown_command", chat_id)
-            )
-    else:
+    command = command_mapping.get(call.data)
+    if command is None:
         bot.answer_callback_query(call.id, i18n.get_message("invalid_action", chat_id))
+        return
+
+    if dispatch_command(command, message):
+        # Stop the loading spinner on the button
+        bot.answer_callback_query(call.id)
+    else:
+        bot.answer_callback_query(call.id, i18n.get_message("unknown_command", chat_id))
+
+
+def dispatch_command(command: TCommand, message) -> bool:
+    """Run the handler for a resolved command.
+
+    Returns True if the command was handled, False if it is unknown.
+    Shared by slash commands and localized keyboard button texts so the
+    two paths can never drift apart.
+    """
+    chat_id = message.chat.id
+
+    if command == TCommand.Start:
+        handle_start(message)
+    elif command == TCommand.Backup:
+        send_backup(message)
+    elif command == TCommand.RegisterBirthday:
+        register_birthday(message)
+    elif command == TCommand.RegisterBackup:
+        register_backup(message)
+    elif command == TCommand.UnregisterBackup:
+        unregister_backup(message)
+    elif command == TCommand.DeleteBirthday:
+        handle_deletion(message)
+    elif command == TCommand.Stats:
+        handle_stats(message)
+    elif command == TCommand.Share:
+        send_share_message(message)
+    elif command == TCommand.Settings:
+        bot.send_message(
+            chat_id,
+            i18n.get_message("settings_title", chat_id),
+            reply_markup=get_settings_keyboard(chat_id),
+            parse_mode="Markdown",
+        )
+    elif command == TCommand.Language:
+        bot.send_message(
+            chat_id,
+            i18n.get_message("settings_title", chat_id),
+            reply_markup=get_language_keyboard(),
+            parse_mode="Markdown",
+        )
+    elif command == TCommand.Support:
+        handle_support(message)
+    else:
+        return False
+
+    return True
 
 
 @bot.message_handler(func=lambda message: True)
@@ -1128,90 +1205,25 @@ def handle_message(message):
     chat_id = message.chat.id
     user_message = message.text.strip()
 
-    if user_message == "/clear":
-        # Secret command to clear keyboard
-        safe_delete_message(chat_id, message.message_id)
-        # Remove keyboard and clean up that message
-        remove_keyboard(message)
-        return
+    # Handle slash commands, tolerating the "@botusername" suffix that
+    # Telegram adds in group chats.
+    slash_command = extract_command(user_message)
+    if slash_command is not None:
+        if slash_command == "clear":
+            # Secret command to clear keyboard
+            safe_delete_message(chat_id, message.message_id)
+            # Remove keyboard and clean up that message
+            remove_keyboard(message)
+            return
 
-    # Handle text commands (like /start)
-    if user_message in COMMAND_MAPPINGS:
-        command = COMMAND_MAPPINGS[user_message]
-        if command == TCommand.Start:
-            handle_start(message)
-            return
-        elif command == TCommand.Backup:
-            send_backup(message)
-            return
-        elif command == TCommand.RegisterBirthday:
-            register_birthday(message)
-            return
-        elif command == TCommand.RegisterBackup:
-            register_backup(message)
-            return
-        elif command == TCommand.UnregisterBackup:
-            unregister_backup(message)
-            return
-        elif command == TCommand.DeleteBirthday:
-            handle_deletion(message)
-            return
-        elif command == TCommand.Stats:
-            handle_stats(message)
-            return
-        elif command == TCommand.Share:
-            send_share_message(message)
-            return
-        elif command == TCommand.Settings:
-            bot.send_message(
-                chat_id,
-                i18n.get_message("settings_title", chat_id),
-                reply_markup=get_settings_keyboard(chat_id),
-                parse_mode="Markdown",
-            )
-            return
-        elif command == TCommand.Support:
-            handle_support(message)
+        command = COMMAND_MAPPINGS.get(slash_command)
+        if command is not None and dispatch_command(command, message):
             return
 
     # Handle button texts in user's language
     button_mapping = get_button_to_command_mapping(chat_id)
     if user_message in button_mapping:
-        command = button_mapping[user_message]
-        if command == TCommand.Start:
-            handle_start(message)
-            return
-        elif command == TCommand.Backup:
-            send_backup(message)
-            return
-        elif command == TCommand.RegisterBirthday:
-            register_birthday(message)
-            return
-        elif command == TCommand.RegisterBackup:
-            register_backup(message)
-            return
-        elif command == TCommand.UnregisterBackup:
-            unregister_backup(message)
-            return
-        elif command == TCommand.DeleteBirthday:
-            handle_deletion(message)
-            return
-        elif command == TCommand.Stats:
-            handle_stats(message)
-            return
-        elif command == TCommand.Share:
-            send_share_message(message)
-            return
-        elif command == TCommand.Settings:
-            bot.send_message(
-                chat_id,
-                i18n.get_message("settings_title", chat_id),
-                reply_markup=get_settings_keyboard(chat_id),
-                parse_mode="Markdown",
-            )
-            return
-        elif command == TCommand.Support:
-            handle_support(message)
+        if dispatch_command(button_mapping[user_message], message):
             return
 
     match user_states.get(chat_id):
