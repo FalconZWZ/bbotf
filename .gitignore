@@ -219,3 +219,8 @@ temp_*
 
 # Original gitignore database section (keeping for compatibility)
 # database:
+
+
+# Secrets: token files must never be committed
+start.env
+*.env
