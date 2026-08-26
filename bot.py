@@ -131,6 +131,19 @@ COMMAND_MAPPINGS = {
 }
 
 
+def normalize_command(text: str) -> str:
+    """Strip the '@username' suffix from a command, if present.
+
+    Telegram sends commands triggered from the bot menu in the form
+    '/command@BotUsername' while commands typed as plain text arrive as
+    '/command'. Normalizing ensures both forms match COMMAND_MAPPINGS.
+    """
+    if text and text.startswith("/") and "@" in text:
+        command_part, _, _ = text.partition("@")
+        return command_part
+    return text
+
+
 def get_button_to_command_mapping(chat_id: int) -> dict:
     """Get button text to command mapping for specific user's language"""
     return {
@@ -1135,9 +1148,11 @@ def handle_message(message):
         remove_keyboard(message)
         return
 
-    # Handle text commands (like /start)
-    if user_message in COMMAND_MAPPINGS:
-        command = COMMAND_MAPPINGS[user_message]
+    # Handle text commands (like /start), normalizing '/command@BotUsername'
+    # (as sent from the Telegram command menu) to '/command'
+    normalized_message = normalize_command(user_message)
+    if normalized_message in COMMAND_MAPPINGS:
+        command = COMMAND_MAPPINGS[normalized_message]
         if command == TCommand.Start:
             handle_start(message)
             return
