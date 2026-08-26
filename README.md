@@ -49,9 +49,10 @@ pip install -r requirements.txt
 ```bash
 TELEGRAM_BOT_TOKEN=your_bot_token_here
 PRESTABLE_TELEGRAM_BOT_TOKEN=your_prestable_bot_token_here
+ADMIN_USER_IDS=your_telegram_user_id
 ```
 
-**Note:** The `PRESTABLE_TELEGRAM_BOT_TOKEN` is optional and only needed if you plan to use the prestable testing environment.
+**Note:** The `PRESTABLE_TELEGRAM_BOT_TOKEN` is optional and only needed if you plan to use the prestable testing environment. `ADMIN_USER_IDS` is optional and only needed to use `/admin_stats` (comma-separated Telegram user IDs, e.g. `123456789,987654321`).
 
 4. Choose your preferred deployment method:
 
@@ -133,6 +134,7 @@ The bot automatically detects your preference and remembers it for future intera
 - `/backup` - Get a list of all saved birthdays
 - `/register_backup` - Set up automatic backups
 - `/unregister_backup` - Disable automatic backups
+- `/admin_stats` - Admin-only overview: total birthdays stored, active chats/groups, and the nearest upcoming birthdays across all chats (requires `ADMIN_USER_IDS`)
 
 ### Group Chat Support
 

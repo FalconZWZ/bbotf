@@ -48,6 +48,12 @@ else:
 
 bot = telebot.TeleBot(TOKEN)
 
+# Telegram user IDs allowed to run admin-only commands (e.g. /admin_stats).
+# Comma-separated in the env var, e.g. "123456789,987654321".
+ADMIN_USER_IDS = {
+    int(uid) for uid in os.getenv("ADMIN_USER_IDS", "").split(",") if uid.strip().isdigit()
+}
+
 
 def setup_bot_commands():
     """Register the bot's command menu (shown when users type '/' in Telegram).
@@ -110,6 +116,7 @@ class TCommand(enum.Enum):
     UnregisterBackup = "unregister_backup"
     DeleteBirthday = "delete_birthday"
     Stats = "stats"
+    AdminStats = "admin_stats"
     Share = "share"
     Language = "language"
     Support = "support"
@@ -134,6 +141,7 @@ COMMAND_MAPPINGS = {
     "delete": TCommand.DeleteBirthday,
     "share": TCommand.Share,
     "stats": TCommand.Stats,
+    "admin_stats": TCommand.AdminStats,
     "support": TCommand.Support,
     "settings": TCommand.Settings,
     "language": TCommand.Language,
@@ -586,6 +594,47 @@ def handle_stats(message):
         parse_mode="Markdown",
     )
 
+    user_states[chat_id] = TUserState.Default
+
+
+def handle_admin_stats(message):
+    """Admin-only overview: total birthdays, active chats/groups, nearest birthdays.
+
+    Silently behaves like an unknown command for non-admins so the command's
+    existence isn't revealed to regular users.
+    """
+    chat_id = message.chat.id
+    user_id = message.from_user.id if message.from_user else None
+
+    if not ADMIN_USER_IDS or user_id not in ADMIN_USER_IDS:
+        bot.send_message(chat_id, i18n.get_message("unknown_command", chat_id))
+        return
+
+    # Already sorted by soonest upcoming occurrence (see get_all_birthdays_for_all_chats).
+    all_birthdays = db.get_all_birthdays_for_all_chats()
+    total_birthdays = len(all_birthdays)
+
+    distinct_chat_ids = db.get_all_distinct_chat_ids()
+    total_chats = len(distinct_chat_ids)
+    # Telegram convention: group/supergroup chat IDs are negative, private chats are positive.
+    total_groups = sum(1 for cid in distinct_chat_ids if cid < 0)
+    total_private = total_chats - total_groups
+
+    nearest_count = 10
+    nearest_block = "\n".join(f"• {line}" for line in all_birthdays[:nearest_count])
+    if not nearest_block:
+        nearest_block = "—"
+
+    text = (
+        "🛠 *Admin Stats*\n\n"
+        f"• Всего дней рождения в базе: {total_birthdays}\n"
+        f"• Активных чатов: {total_chats}\n"
+        f"   – групп: {total_groups}\n"
+        f"   – личных: {total_private}\n\n"
+        f"*Ближайшие дни рождения:*\n{nearest_block}"
+    )
+
+    bot.send_message(chat_id, text, parse_mode="Markdown")
     user_states[chat_id] = TUserState.Default
 
 
@@ -1176,6 +1225,8 @@ def dispatch_command(command: TCommand, message) -> bool:
         handle_deletion(message)
     elif command == TCommand.Stats:
         handle_stats(message)
+    elif command == TCommand.AdminStats:
+        handle_admin_stats(message)
     elif command == TCommand.Share:
         send_share_message(message)
     elif command == TCommand.Settings:
