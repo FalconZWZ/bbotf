@@ -112,6 +112,14 @@ COMMAND_MAPPINGS = {
 }
 
 
+def normalize_command(text: str) -> str:
+    """Strip the @botusername suffix Telegram appends to commands sent via
+    the command menu (e.g. '/start@FalconZZZ_bdatebot' -> '/start')."""
+    if "@" in text:
+        return text.split("@", 1)[0]
+    return text
+
+
 def get_button_to_command_mapping(chat_id: int) -> dict:
     """Get button text to command mapping for specific user's language"""
     return {
@@ -1116,9 +1124,12 @@ def handle_message(message):
         remove_keyboard(message)
         return
 
-    # Handle text commands (like /start)
-    if user_message in COMMAND_MAPPINGS:
-        command = COMMAND_MAPPINGS[user_message]
+    # Handle text commands (like /start), normalizing away any
+    # @botusername suffix Telegram appends when sent via the command menu
+    # (e.g. '/start@FalconZZZ_bdatebot' -> '/start').
+    normalized_message = normalize_command(user_message)
+    if normalized_message in COMMAND_MAPPINGS:
+        command = COMMAND_MAPPINGS[normalized_message]
         if command == TCommand.Start:
             handle_start(message)
             return
